@@ -17,6 +17,10 @@ local themes = {
 	{Name = "Green", Accent = RGB(114, 230, 173), Text = RGB(224, 255, 239), Muted = RGB(153, 200, 178), Base = RGB(10, 17, 16)},
 	{Name = "Blue", Accent = RGB(124, 185, 255), Text = RGB(226, 240, 255), Muted = RGB(161, 187, 216), Base = RGB(11, 15, 23)},
 	{Name = "Black", Accent = RGB(208, 211, 223), Text = RGB(242, 243, 248), Muted = RGB(169, 172, 187), Base = RGB(8, 9, 13)},
+	{Name = "Red", Accent = RGB(255, 110, 110), Text = RGB(255, 232, 232), Muted = RGB(214, 170, 170), Base = RGB(20, 11, 12)},
+	{Name = "Orange", Accent = RGB(255, 178, 102), Text = RGB(255, 240, 226), Muted = RGB(216, 186, 160), Base = RGB(20, 14, 10)},
+	{Name = "Cyan", Accent = RGB(110, 225, 255), Text = RGB(226, 248, 255), Muted = RGB(160, 200, 216), Base = RGB(10, 16, 20)},
+	{Name = "Pink", Accent = RGB(255, 150, 210), Text = RGB(255, 232, 246), Muted = RGB(216, 170, 198), Base = RGB(20, 11, 17)},
 }
 local black, white = RGB(0, 0, 0), RGB(255, 255, 255)
 
@@ -31,7 +35,7 @@ end
 local function short(s, n) s = tostring(s or ""); return #s > n and s:sub(1, n - 3) .. "..." or s end
 local function smooth(t) t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 15) + 10) end
 
-local app = {Name = "OSGames", Version = "2.0.0-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.7}
+local app = {Name = "OSGames", Version = "2.0.1-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false}
 env.OSGames = app; pcall(rawset, _G, "OSGames", app)
 env.JDUI = nil; pcall(rawset, _G, "JDUI", nil)
 
@@ -352,7 +356,14 @@ function app:AddTab(o)
 	if type(o) == "string" then o = {Title = o} end
 	o = o or {}; local tab = setmetatable({Id = uid(), Title = short(o.Title or "Tab", 18), Icon = o.Icon or "script", Controls = {}, Page = 1}, Tab)
 	animations[tab.Id .. "appear"] = 0
-	self.Tabs[#self.Tabs + 1] = tab; if not selected then selected = tab end; return tab
+	-- Pin Home top, Settings bottom: new tabs insert above Settings
+	local st = rawget(self, "Settings")
+	if st and tab ~= st and tab ~= rawget(self, "Home") and self.Tabs[#self.Tabs] == st then
+		table.insert(self.Tabs, #self.Tabs, tab)
+	else
+		self.Tabs[#self.Tabs + 1] = tab
+	end
+	if not selected then selected = tab end; return tab
 end
 local home = app:AddTab({Title = "Home", Icon = "home"}); app.Home = home
 local settings = app:AddTab({Title = "Settings", Icon = "gear"}); app.Settings = settings
@@ -360,8 +371,9 @@ home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page. 
 home:AddLabel({Title = "Thanks to 9mfg", Description = "original UI creator", Icon = "spark"})
 home:AddLabel({Title = "Thanks to objectivizing", Description = "UI lib source used", Icon = "layers"})
 home:AddLabel({Title = "Edited by DontRunSean", Description = "me xD", Icon = "bolt"})
-local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
-settings:AddSlider({Title = "Background opacity", Description = "window solidity in %", Min = 20, Max = 100, Step = 10, Default = 70, Callback = function(v) app.BgOpacity = v / 100 end})
+local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black", "Red", "Orange", "Cyan", "Pink"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
+settings:AddSlider({Title = "Background opacity", Description = "window solidity in %", Min = 20, Max = 100, Step = 5, Default = 85, Callback = function(v) app.BgOpacity = v / 100 end})
+settings:AddToggle({Title = "RGB spin", Description = "rainbow border arcs", Default = false, Callback = function(v) app.RGBSpin = v end})
 settings:_add("keybind", {Title = "Menu keybind", Description = "Click to record a key. Escape cancels."})
 settings:AddButton({Title = "Test notification", Description = "Test.", Icon = "info", ButtonText = "Test", Callback = function()
 	app:Notify({Title = "Notification test", Content = "it works.", Type = "success", Duration = 5})
@@ -446,8 +458,9 @@ local function renderControl(c, py, index)
 end
 local function renderPopup()
 	if not popup then return end
-	local p = popup; local c = p.control; local reveal = ease("dropdown", p.Closing and 0 or 1, 20); local py = p.y + (1 - reveal) * -6
-	if p.Closing and reveal < 0.01 then popup = nil; return end
+	-- SOLID: dropdown opens/closes instantly, no fade (crisp)
+	local p = popup; local c = p.control; local reveal = 1; local py = p.y
+	if p.Closing then popup = nil; return end
 	local count = min(4, #c.Options - p.offset); local extra = #c.Options > 4 and 29 or 0
 	local height = count * 32 + 12 + extra
 	box("dropdownshadow", p.x - 4, py + 3, 173, height + 5, black, .4 * reveal, 13, 68)
@@ -457,9 +470,9 @@ local function renderPopup()
 		local value = c.Options[p.offset + j]; local rowY = py + 6 + (j - 1) * 32
 		local over = hit(p.x + 5, rowY, 155, 30, true)
 		local chosen = c.Value == value
-		local hover = ease("optionmotion" .. j, over and 1 or 0, 16)
+		local hover = (over and 1 or 0)
 		box("optionrail" .. j, p.x + 6, rowY + 8, 2, 14, accent, hover * reveal, 1, 72)
-		box("option" .. j, p.x + 5, rowY, 155, 30, accent, ease("optionhover" .. j, chosen and 0.22 + hover * .08 or hover * .16) * reveal, 7, 71)
+		box("option" .. j, p.x + 5, rowY, 155, 30, accent, (chosen and 0.22 + hover * .08 or hover * .16) * reveal, 7, 71)
 		label("optiontext" .. j, short(value, 17), p.x + 12 + hover * 4, rowY + 9, 12, mix(chosen and accent or ink, accent, hover * .6), reveal, chosen, 73)
 		if chosen then icon("optioncheck" .. j, "check", p.x + 136, rowY + 5, accent, reveal, 73) end
 		if over and click then click = false; c:SetValue(value); p.Closing = true; break end
@@ -680,13 +693,20 @@ local function render()
 			local head1 = motionClock * 190
 			local head2 = head1 + borderLength * 0.5
 			local ARC_LEN, ARC_STEPS = 90, 5
+			local arc1, arc2 = accent, accent
+			if app.RGBSpin then
+				local h = (motionClock * 0.12) % 1
+				arc1 = Color3.fromHSV(h, 0.75, 1)
+				arc2 = Color3.fromHSV((h + 0.5) % 1, 0.75, 1)
+			end
 			for k = 1, 2 do
 				local head = (k == 1) and head1 or head2
+				local arcC = (k == 1) and arc1 or arc2
 				local px, py = borderPoint(head)
 				for j = 1, ARC_STEPS do
 					local qx, qy = borderPoint(head - (j * (ARC_LEN / ARC_STEPS)))
 					local id = cacheKey("osArc" .. k, j)
-					line(id, px, py, qx, qy, accent, strength, 19, 2.5)
+					line(id, px, py, qx, qy, arcC, strength, 19, 2.5)
 					px, py = qx, qy
 				end
 			end
