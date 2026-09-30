@@ -70,6 +70,63 @@ task.spawn(function()
 	end
 end)
 
+-- Avatar portrait for header logo (33x33 headshot, cached, fallback to "OS" text)
+local avatarBytes = nil
+local function httpGetBytes(url)
+	local requestFn = env.request or env.http_request
+	if type(requestFn) == "function" then
+		local ok, res = pcall(requestFn, {Url = url, Method = "GET", Timeout = 10})
+		if ok then
+			if type(res) == "string" then return res end
+			if type(res) == "table" then
+				local s = tonumber(res.StatusCode or res.Status or 200)
+				if s and s >= 200 and s < 300 then
+					local body = res.Body or res.body
+					if type(body) == "string" then return body end
+				end
+			end
+		end
+	end
+	if type(env.httpget) == "function" then
+		local ok, body = pcall(env.httpget, url)
+		if ok and type(body) == "string" then return body end
+	end
+	if type(httpget) == "function" then
+		local ok, body = pcall(httpget, url)
+		if ok and type(body) == "string" then return body end
+	end
+	local ok, body = pcall(function() return game:HttpGet(url) end)
+	if ok and type(body) == "string" then return body end
+	return nil
+end
+local function loadAvatar()
+	task.spawn(function()
+		local uid = tonumber(playerId) or tonumber(lp and lp.UserId) or 0
+		if not uid or uid <= 0 then return end
+		uid = floor(uid)
+		local endpoint = "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" .. uid .. "&size=100x100&format=Png&isCircular=false"
+		for attempt = 1, 3 do
+			if not app.Alive then return end
+			local body = httpGetBytes(endpoint)
+			if type(body) == "string" then
+				local url = body:match('"imageUrl"%s*:%s*"([^"]+)"')
+				if url then
+					url = url:gsub("\\/", "/")
+					if url:match("^https://") then
+						local bytes = httpGetBytes(url)
+						if type(bytes) == "string" and #bytes > 8 and bytes:sub(1, 8) == "\137PNG\13\10\26\10" then
+							avatarBytes = bytes
+							return
+						end
+					end
+				end
+			end
+			if attempt < 3 then task.wait(attempt) end
+		end
+	end)
+end
+loadAvatar()
+
 local pool, animations, notices = {}, {open = 0}, {}
 local sequence, frame, connection = 0, 0, nil
 local x, y, S, W, H = 100, 100, 1, 800, 450
@@ -179,6 +236,30 @@ local function label(id, value, px, py, size, c, opacity, bold, z) txt(id, value
 local function line(id, x1, y1, x2, y2, c, opacity, z, thickness)
 	rawLine(id, x + x1 * S, y + y1 * S, x + x2 * S, y + y2 * S, c, a * opacity, z or 45, max(1, (thickness or 1.65) * S))
 end
+local function portrait(id, bytes, px, py, w, h, opacity, r, z)
+	if type(bytes) ~= "string" or #bytes < 8 then return false end
+	local e = obj(id, "Image")
+	local alpha = a * (opacity or 1)
+	local visible = alpha > 0.005 and w > 0 and h > 0
+	if visible then
+		local d = e.d
+		if e.bytes ~= bytes then
+			local ok = pcall(function() d.Data = bytes end)
+			if not ok then setVisible(e, false); return false end
+			e.bytes = bytes
+		end
+		local sx, sy = floor(x + px * S + 0.5), floor(y + py * S + 0.5)
+		local sw, sh = floor(w * S + 0.5), floor(h * S + 0.5)
+		if e.px ~= sx or e.py ~= sy then pcall(function() d.Position = V(sx, sy) end); e.px, e.py = sx, sy end
+		if e.w ~= sw or e.h ~= sh then pcall(function() d.Size = V(sw, sh) end); e.w, e.h = sw, sh end
+		local rr = floor((r or 0) * S + 0.5)
+		if e.r ~= rr then pcall(function() d.Rounding = rr end); e.r = rr end
+		if e.t ~= alpha then pcall(function() d.Transparency = alpha end); e.t = alpha end
+		if e.z ~= z then d.ZIndex = z; e.z = z end
+	end
+	setVisible(e, visible)
+	return true
+end
 local paths = {
 	spark = {{9.6,2.3,10,1.7},{10,1.7,10.4,2.3},{10.4,2.3,11.6,6.7},{11.6,6.7,12.2,7.8},{12.2,7.8,13.3,8.4},{13.3,8.4,17.7,9.6},{17.7,9.6,18.3,10},{18.3,10,17.7,10.4},{17.7,10.4,13.3,11.6},{13.3,11.6,12.2,12.2},{12.2,12.2,11.6,13.3},{11.6,13.3,10.4,17.7},{10.4,17.7,10,18.3},{10,18.3,9.6,17.7},{9.6,17.7,8.4,13.3},{8.4,13.3,7.8,12.2},{7.8,12.2,6.7,11.6},{6.7,11.6,2.3,10.4},{2.3,10.4,1.7,10},{1.7,10,2.3,9.6},{2.3,9.6,6.7,8.4},{6.7,8.4,7.8,7.8},{7.8,7.8,8.4,6.7},{8.4,6.7,9.6,2.3}},
 	layers = {{2,10,8.7,13.4},{8.7,13.4,10,13.7},{10,13.7,11.3,13.4},{11.3,13.4,18,10},{2,14,8.7,17.4},{8.7,17.4,10,17.7},{10,17.7,11.3,17.4},{11.3,17.4,18,14},{3.3,6.6,2.6,6},{2.6,6,3.3,5.4},{3.3,5.4,8.7,2.6},{8.7,2.6,10,2.3},{10,2.3,11.3,2.6},{11.3,2.6,16.7,5.4},{16.7,5.4,17.4,6},{17.4,6,16.7,6.6},{16.7,6.6,11.3,9.4},{11.3,9.4,10,9.7},{10,9.7,8.7,9.4},{8.7,9.4,3.3,6.6}},
@@ -249,6 +330,7 @@ function app:Destroy()
 	self.Alive = false
 	if connection then connection:Disconnect() end
 	if introSound then pcall(function() introSound:Destroy() end); introSound = nil end
+	avatarBytes = nil
 	for _, e in pairs(pool) do pcall(function() e.d:Remove() end) end
 	pool = {}; notices = {}
 	if env.OSGames == self then env.OSGames = nil end
@@ -723,9 +805,11 @@ local function render()
 		box("sidebar", 10, 10, sidebarWidth, H - 20, mix(tint, black, .24), app.BgOpacity * 0.85, 12, 15)
 		box("sidebarRule", 10 + sidebarWidth, 25, 1, H - 50, ink, .06, 0, 16)
 
-		-- Player header: OS logo + in-game username
+		-- Player header: avatar portrait + in-game username (fallback to OS text)
 		box("logoBg", 24, 24, 37, 37, accent, 0.14, 10, 20)
-		label("osLogo", "OS", 30, 29, 18, accent, 1, true, 21)
+		if not portrait("brandPortrait", avatarBytes, 26, 26, 33, 33, 1, 9, 21) then
+			label("osLogo", "OS", 30, 29, 18, accent, 1, true, 21)
+		end
 		label("osUser", short(playerName, 14), 70, 22, 14, ink, sidebarText, true, 42)
 		label("osSub", "OSGAMES", 70, 42, 9, accent, .85 * sidebarText, true, 42)
 
@@ -766,14 +850,12 @@ local function render()
 			for i = 1, #selected.Controls do
 				local c = selected.Controls[i]
 				local cpy = 99 + (i - 1) * 77 - sc
-				local clip = min(clamp((cpy - 70) / 24, 0, 1), clamp((402 - cpy) / 24, 0, 1))
+				local clip = min(clamp((cpy - 78) / 10, 0, 1), clamp((392 - cpy) / 10, 0, 1))
 				if clip > 0.01 then
 					renderControl(c, cpy, i, clip)
 				end
 				if not app.Alive then return end
 			end
-			box("clipTLine", contentLeft, 95, W - contentLeft, 1, ink, .10, 0, 61)
-			box("clipBLine", contentLeft, 399, W - contentLeft, 1, ink, .10, 0, 61)
 			-- Scrollbar (only when there is more to see)
 			local ms = maxScroll()
 			if ms > 0 then
