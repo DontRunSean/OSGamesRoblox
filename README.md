@@ -1,5 +1,11 @@
 # OSGames UI
-
+<p align="center">
+  <img src="https://i.imgur.com/ndFlWEu.png" width="49%" alt="Home tab" />
+  <img src="https://i.imgur.com/sj991Ag.png" width="49%" alt="Settings tab" />
+</p>
+<p align="center">
+  <img src="https://i.imgur.com/IeW4tdV.png" width="320" alt="Notification" />
+</p>
 Lightweight Matcha Drawing UI. Right Shift toggles by default.
 
 ## Load UI
