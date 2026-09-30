@@ -431,7 +431,7 @@ local settings = app:AddTab({Title = "Settings", Icon = "gear"}); app.Settings =
 home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page | DontRunSean", Icon = "home"})
 home:AddLabel({Title = "Thanks to 9mfg", Description = "original UI creator", Icon = "spark"})
 home:AddLabel({Title = "Thanks to objectivizing", Description = "UI lib source used", Icon = "layers"})
-home:AddLabel({Title = "CLICK DRAG TO SCROLL", Description = "Idk how to use scrollwheal xD", Icon = "bolt"})
+home:AddLabel({Title = "CLICK DRAG TO SCROLL", Description = "Idk how to use scroll wheel", Icon = "bolt"})
 local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black", "Red", "Orange", "Cyan", "Pink"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
 settings:AddSlider({Title = "Background opacity", Description = "window solidity in %", Min = 20, Max = 100, Step = 5, Default = 85, Callback = function(v) app.BgOpacity = v / 100 end})
 settings:AddToggle({Title = "RGB spin", Description = "rainbow border arcs", Default = false, Callback = function(v) app.RGBSpin = v end})
