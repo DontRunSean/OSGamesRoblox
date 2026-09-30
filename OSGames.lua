@@ -1,5 +1,4 @@
--- OSGames UI v2.0.2-osgames (optimized fork)
--- Optimized: fewer per-frame drawings, cached math, avatar header, no brand-vector cost
+-- OSGames UI v2.0.3-osgames
 local env = getfenv()
 local oldOS = env.OSGames or rawget(_G, "OSGames")
 if type(oldOS) == "table" and oldOS.Destroy then pcall(oldOS.Destroy, oldOS) end
@@ -35,14 +34,13 @@ end
 local function short(s, n) s = tostring(s or ""); return #s > n and s:sub(1, n - 3) .. "..." or s end
 local function smooth(t) t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 15) + 10) end
 
-local app = {Name = "OSGames", Version = "2.0.2-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false}
+local app = {Name = "OSGames", Version = "2.0.3-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false}
 env.OSGames = app; pcall(rawset, _G, "OSGames", app)
 env.JDUI = nil; pcall(rawset, _G, "JDUI", nil)
 
 local run = game:GetService("RunService")
 local workspace = game:GetService("Workspace")
 local Players = game:GetService("Players")
-local HttpService = game:GetService("HttpService")
 local lp = Players.LocalPlayer
 local mouse = lp:GetMouse()
 
@@ -57,13 +55,7 @@ pcall(function()
 end)
 app.PlayerName = playerName
 app.PlayerId = playerId
-local playerInitial = string.upper(string.sub(playerName, 1, 1))
-if playerInitial == "" then playerInitial = "?" end
-
-local avatarBytes, avatarAssigned, avatarFailed = nil, false, false
--- CRISP: no headshot download (was blurry when scaled + slow). OS text logo used instead.
--- Username still comes live from the game below.
--- Refresh display name every 5s (cheap, handles renames without per-frame cost)
+-- Username refreshes every 5s without per-frame cost
 task.spawn(function()
 	while app.Alive do
 		task.wait(5)
@@ -73,7 +65,6 @@ task.spawn(function()
 			if type(n) == "string" and n ~= "" and n ~= playerName then
 				playerName = n
 				app.PlayerName = n
-				playerInitial = string.upper(string.sub(n, 1, 1))
 			end
 		end)
 	end
@@ -99,7 +90,7 @@ local closeConfirm = false
 local closeConfirmClosing = false
 local closingStarted = nil
 local closeCenterX, closeCenterY, closeBaseS = nil, nil, nil
-local CLOSE_DURATION = 1.05 -- OPT: was 1.28
+local CLOSE_DURATION = 1.05
 animations.sidebar = 0
 local targetTheme = 4
 local tint, ink, muted, accent = themes[4].Base, themes[4].Text, themes[4].Muted, themes[4].Accent
@@ -188,28 +179,6 @@ local function label(id, value, px, py, size, c, opacity, bold, z) txt(id, value
 local function line(id, x1, y1, x2, y2, c, opacity, z, thickness)
 	rawLine(id, x + x1 * S, y + y1 * S, x + x2 * S, y + y2 * S, c, a * opacity, z or 45, max(1, (thickness or 1.65) * S))
 end
--- OPT: avatar image helper (1 pooled Image, Data assigned once)
-local function avatarImg(px, py, sz, opacity, z)
-	if not avatarBytes then return false end
-	local e = obj("osAvatar", "Image")
-	local d = e.d
-	if not avatarAssigned then
-		local ok = pcall(function() d.Data = avatarBytes end)
-		if not ok then avatarFailed = true; return false end
-		avatarAssigned = true
-	end
-	local sx, sy, ss = x + px * S, y + py * S, sz * S
-	if e.px ~= sx or e.py ~= sy then d.Position = V(sx, sy); e.px, e.py = sx, sy end
-	if e.ss ~= ss then d.Size = V(ss, ss); e.ss = ss end
-	local cr = 8 * S; if e.r ~= cr then pcall(function() d.Corner = cr end); e.r = cr end
-	setCommon(e, white, 1 - clamp(a * opacity, 0, 1), z)
-	local loaded = true
-	pcall(function() loaded = d.IsLoaded ~= false end)
-	setVisible(e, opacity > 0.01 and a > 0.01 and loaded)
-	return loaded
-end
-
--- OPT: removed 70-stroke `brand` vector (was redrawn every frame). Other icons kept.
 local paths = {
 	spark = {{9.6,2.3,10,1.7},{10,1.7,10.4,2.3},{10.4,2.3,11.6,6.7},{11.6,6.7,12.2,7.8},{12.2,7.8,13.3,8.4},{13.3,8.4,17.7,9.6},{17.7,9.6,18.3,10},{18.3,10,17.7,10.4},{17.7,10.4,13.3,11.6},{13.3,11.6,12.2,12.2},{12.2,12.2,11.6,13.3},{11.6,13.3,10.4,17.7},{10.4,17.7,10,18.3},{10,18.3,9.6,17.7},{9.6,17.7,8.4,13.3},{8.4,13.3,7.8,12.2},{7.8,12.2,6.7,11.6},{6.7,11.6,2.3,10.4},{2.3,10.4,1.7,10},{1.7,10,2.3,9.6},{2.3,9.6,6.7,8.4},{6.7,8.4,7.8,7.8},{7.8,7.8,8.4,6.7},{8.4,6.7,9.6,2.3}},
 	layers = {{2,10,8.7,13.4},{8.7,13.4,10,13.7},{10,13.7,11.3,13.4},{11.3,13.4,18,10},{2,14,8.7,17.4},{8.7,17.4,10,17.7},{10,17.7,11.3,17.4},{11.3,17.4,18,14},{3.3,6.6,2.6,6},{2.6,6,3.3,5.4},{3.3,5.4,8.7,2.6},{8.7,2.6,10,2.3},{10,2.3,11.3,2.6},{11.3,2.6,16.7,5.4},{16.7,5.4,17.4,6},{17.4,6,16.7,6.6},{16.7,6.6,11.3,9.4},{11.3,9.4,10,9.7},{10,9.7,8.7,9.4},{8.7,9.4,3.3,6.6}},
@@ -354,6 +323,7 @@ local function replayTab(tab)
 	end
 end
 function Tab:Select()
+	if not introDone and self ~= app.Home then return self end
 	if selected ~= self then selected = self; replayTab(self) end
 	for i, t in ipairs(app.Tabs) do if t == self then tabOffset = clamp(tabOffset, max(0, i - 5), i - 1) end end
 	return self
@@ -404,12 +374,14 @@ local function beginCapture(control)
 	capture = {keys = {}, control = control}; popup = nil
 	for k = 8, 254 do capture.keys[k] = iskeypressed(k) end
 end
-local function renderControl(c, py, index)
+local function renderControl(c, py, index, clip)
+	clip = clip or 1
 	local id = c.Id; local px = contentLeft; local width = 761 - px
 	local enter = ease(id .. "appear", (app.ReducedMotion or motionClock - visitTime > (index - 1) * 0.045) and 1 or 0, 13)
-	contentA = contentA * enter
+	local outerA = contentA
+	contentA = outerA * enter * clip
 	py = py + (1 - enter) * 10
-	local hovered = hit(px, py, width, 65)
+	local hovered = clip > 0.25 and hit(px, py, width, 65)
 	local hover = ease(id .. "cardhover", hovered and 1 or 0, 14)
 	local surface = mix(tint, white, 0.035 + hover * 0.022)
 	box(id .. "border", px - hover, py - hover, width + hover * 2, 65 + hover * 2, mix(ink, accent, hover), (.065 + hover * .13) * contentA, 12, 22)
@@ -461,6 +433,7 @@ local function renderControl(c, py, index)
 		glow(id .. "sliderGlow", sx + sw * t - 3, py + 37, 7, 7, contentA, 30)
 		box(id .. "thumb", sx + sw * t - 5, py + 35, 11, 11, ink, contentA, 6, 32)
 	end
+	contentA = outerA
 end
 local function renderPopup()
 	if not popup then return end
@@ -555,7 +528,7 @@ local function renderCloseEffects(now)
 	local bs = closeBaseS or S
 	if not app.ReducedMotion then
 		local gather = smooth((elapsed - .10) / .62)
-		for j = 1, 12 do -- OPT: was 20
+		for j = 1, 12 do
 			local angle = j * 2.399963229728653
 			local radius = (1 - gather) * (116 + (j % 5) * 24) * bs
 			local wobble = sin(elapsed * 14 + j) * 3 * bs * (1 - gather)
@@ -565,7 +538,7 @@ local function renderCloseEffects(now)
 			rect("closeShard" .. j, px - sz * .5, py - sz * .5, sz, sz, accent, (1 - gather) * .72, 0, 171)
 		end
 		local scan = smooth((elapsed - .08) / .5)
-		for j = 1, 3 do -- OPT: was 5
+		for j = 1, 3 do
 			local offset = (1 - scan) * (70 + j * 19) * bs
 			local yy = cy + ((j % 2 == 0) and offset or -offset)
 			local width = (150 + j * 38) * bs * (1 - scan * .35)
@@ -590,7 +563,7 @@ local function renderIntro(now, vp)
 	if not introStart then introStart = now end
 	local elapsed = now - introStart
 	if app.ReducedMotion then elapsed = 3.3 end
-	if elapsed >= 3.1 then -- OPT: was 3.3
+	if elapsed >= 3.1 then
 		introDone = true; animations.content = 0; visitTime = motionClock
 		for id, e in pairs(pool) do
 			if id:sub(1, 6) == "intro:" then pcall(function() e.d:Remove() end); pool[id] = nil end
@@ -616,14 +589,14 @@ local function renderIntro(now, vp)
 	local opacity = reveal * (1 - leave)
 	local scale = min(1, (vp.X - 24) / 340, (vp.Y - 24) / 136)
 	local cx, cy = vp.X / 2, vp.Y / 2 + (1 - reveal) * 8 - leave * 8
-	rect("intro:bg", 0, 0, vp.X, vp.Y, black, opacity * 0.85, 0, 115)
+	local wordW = 133 * scale
+	local wordX, wordY = cx - wordW * .5, cy - 22 * scale
+	local compressed = cx - 8 * scale
+	rect("intro:bg", wordX - 26 * scale, wordY - 14 * scale, wordW + 52 * scale, 68 * scale, black, opacity * 0.85, 14 * scale, 115)
 	local function logoEase(t)
 		t = clamp(t, 0, 1)
 		return smooth(t), sin(t * pi) * (1 - t)
 	end
-	local wordW = 133 * scale
-	local wordX, wordY = cx - wordW * .5, cy - 22 * scale
-	local compressed = cx - 8 * scale
 	for i, l in ipairs(introLetters) do
 		local t, pop = logoEase((elapsed - 1.2 - (i - 1) * .09) / .32)
 		local final = wordX + l[2] * scale
@@ -642,17 +615,33 @@ local function render()
 	down = active and ismouse1pressed() and not (app.InputGuard and app.InputGuard()); click = down and not previousDown; previousDown = down
 	mx, my = mouse.X, mouse.Y
 	if not down then drag = nil; slide = nil; scrollGrab = nil end
-	-- Drag-to-scroll: press in content area then drag vertically (Matcha has no wheel-read API)
+	-- Scroll: drag content vertically, drag the scrollbar thumb, or hold Up/Down over content
 	if click and selected and introDone and app.Visible and a > 0.5 and not popup and not capture and not closeConfirm and not closeConfirmClosing and not closingStarted then
 		if mx >= x + contentLeft * S and mx <= x + 761 * S and my >= y + 92 * S and my <= y + 445 * S then
 			scrollGrab = {y = my, s = selected.Scroll or 0}
+		elseif maxScroll() > 0 and mx >= x + 764 * S and mx <= x + 776 * S and my >= y + 95 * S and my <= y + 404 * S then
+			scrollGrab = {track = true}
 		end
 	end
 	if scrollGrab and down and selected and not slide and not popup and not capture then
-		local dy = (scrollGrab.y - my) / S
-		if abs(dy) > 6 then
-			selected.Scroll = clamp(scrollGrab.s + dy, 0, maxScroll())
+		local ms = maxScroll()
+		if scrollGrab.track and ms > 0 then
+			local totalH = #selected.Controls * 77 - 12
+			local th = clamp(301 * (301 / totalH), 30, 301)
+			selected.Scroll = clamp(((my - y) / S - 99 - th * 0.5) / (301 - th) * ms, 0, ms)
 			click = false
+		else
+			local dy = (scrollGrab.y - my) / S
+			if abs(dy) > 6 then
+				selected.Scroll = clamp(scrollGrab.s + dy, 0, ms)
+				click = false
+			end
+		end
+	end
+	if selected and active and introDone and app.Visible and not popup and not capture and not down then
+		if mx >= x + contentLeft * S and mx <= x + 761 * S and my >= y + 92 * S and my <= y + 400 * S then
+			if iskeypressed(0x26) then selected.Scroll = clamp((selected.Scroll or 0) - 220 * dt, 0, maxScroll()) end
+			if iskeypressed(0x28) then selected.Scroll = clamp((selected.Scroll or 0) + 220 * dt, 0, maxScroll()) end
 		end
 	end
 	local wasCapture = capture ~= nil
@@ -703,19 +692,19 @@ local function render()
 	local sidebarText = clamp((sidebarOpen - .60) / .40, 0, 1)
 	local navWidth = 43 + 108 * sidebarOpen
 	if a > 0.005 then
-		-- CRISP: no shadow halo (fixes blur). Base/tint restored, driven by Background opacity slider.
+		-- Base/tint follow the Background opacity slider
 		box("rim", -1, -1, W + 2, H + 2, ink, 0.10, 18, 9)
 		box("base", 0, 0, W, H, tint, app.BgOpacity, 17, 10)
 		box("tint", 0, 0, W, H, tint, app.BgOpacity * 0.176, 17, 12)
 		if app.Effects then
 			local strength = app.EffectStrength
-			-- CRISP: 2 solid arcs on opposite sides, no fading tail, no soft glow line
+			-- Two solid arcs on opposite sides of the border
 			local head1 = motionClock * 190
 			local head2 = head1 + borderLength * 0.5
-			local ARC_LEN, ARC_STEPS = 90, 5
+			local ARC_LEN, ARC_STEPS = 100, 12
 			local arc1, arc2 = accent, accent
 			if app.RGBSpin then
-				local h = (motionClock * 0.12) % 1
+				local h = (motionClock * 0.18) % 1
 				arc1 = Color3.fromHSV(h, 0.75, 1)
 				arc2 = Color3.fromHSV((h + 0.5) % 1, 0.75, 1)
 			end
@@ -734,8 +723,8 @@ local function render()
 		box("sidebar", 10, 10, sidebarWidth, H - 20, mix(tint, black, .24), app.BgOpacity * 0.85, 12, 15)
 		box("sidebarRule", 10 + sidebarWidth, 25, 1, H - 50, ink, .06, 0, 16)
 
-		-- OSGames header: crisp OS logo + in-game username (no blur, no image scaling)
-		box("avatarBg", 24, 24, 37, 37, accent, 0.14, 10, 20)
+		-- Player header: OS logo + in-game username
+		box("logoBg", 24, 24, 37, 37, accent, 0.14, 10, 20)
 		label("osLogo", "OS", 30, 29, 18, accent, 1, true, 21)
 		label("osUser", short(playerName, 14), 70, 22, 14, ink, sidebarText, true, 42)
 		label("osSub", "OSGAMES", 70, 42, 9, accent, .85 * sidebarText, true, 42)
@@ -773,20 +762,18 @@ local function render()
 			icon("welcomeHouse", "home", contentLeft + 39, 224 + bob + enter * 10, accent, ca, 43, 0, 2.5)
 			label("welcomeText", "Welcome.", contentLeft + 97, 211 + enter * 12, 34, ink, ca, true)
 		else
-			-- Scroll view: every control renders at its scrolled position, clipped by the masks
+			-- Scroll view: cards fade out past the clip lines
 			for i = 1, #selected.Controls do
 				local c = selected.Controls[i]
 				local cpy = 99 + (i - 1) * 77 - sc
-				if cpy + 65 >= 92 and cpy <= 400 then
-					renderControl(c, cpy, i)
+				local clip = min(clamp((cpy - 70) / 24, 0, 1), clamp((402 - cpy) / 24, 0, 1))
+				if clip > 0.01 then
+					renderControl(c, cpy, i, clip)
 				end
 				if not app.Alive then return end
 			end
-			-- Masks: cards slide up behind the lines
-			box("maskT", contentLeft, 78, W - contentLeft, 18, tint, 1, 0, 60)
-			box("maskTLine", contentLeft, 95, W - contentLeft, 1, ink, .12, 0, 61)
-			box("maskB", contentLeft, 400, W - contentLeft, 50, tint, 1, 0, 60)
-			box("maskBLine", contentLeft, 399, W - contentLeft, 1, ink, .12, 0, 61)
+			box("clipTLine", contentLeft, 95, W - contentLeft, 1, ink, .10, 0, 61)
+			box("clipBLine", contentLeft, 399, W - contentLeft, 1, ink, .10, 0, 61)
 			-- Scrollbar (only when there is more to see)
 			local ms = maxScroll()
 			if ms > 0 then
