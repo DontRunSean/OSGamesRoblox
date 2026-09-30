@@ -34,7 +34,7 @@ end
 local function short(s, n) s = tostring(s or ""); return #s > n and s:sub(1, n - 3) .. "..." or s end
 local function smooth(t) t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 15) + 10) end
 
-local app = {Name = "OSGames", Version = "2.0.3-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false}
+local app = {Name = "OSGames", Version = "2.0.3-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false, _teardown = {}}
 env.OSGames = app; pcall(rawset, _G, "OSGames", app)
 env.JDUI = nil; pcall(rawset, _G, "JDUI", nil)
 
@@ -44,7 +44,6 @@ local Players = game:GetService("Players")
 local lp = Players.LocalPlayer
 local mouse = lp:GetMouse()
 
--- Player header info (resolved once, refreshed slowly)
 local playerName = "Player"
 local playerId = 0
 pcall(function()
@@ -55,7 +54,6 @@ pcall(function()
 end)
 app.PlayerName = playerName
 app.PlayerId = playerId
--- Username refreshes every 5s without per-frame cost
 task.spawn(function()
 	while app.Alive do
 		task.wait(5)
@@ -70,7 +68,6 @@ task.spawn(function()
 	end
 end)
 
--- Avatar portrait for header logo (33x33 headshot, cached, fallback to "OS" text)
 local avatarBytes = nil
 local function httpGetBytes(url)
 	local requestFn = env.request or env.http_request
@@ -136,7 +133,6 @@ local previousDown, previousKey = false, false
 local drag, slide, popup, capture = nil, nil, nil, nil
 local scrollGrab = nil
 local tabOffset, selected = 0, nil
--- Scroll view: cards at 99 + (i-1)*77, visible 92..400 (cards slide behind the lines)
 local function maxScroll()
 	local n = selected and #selected.Controls or 0
 	return max(0, n * 77 - 313)
@@ -325,9 +321,17 @@ function app:SetKeybind(vk)
 	assert(type(vk) == "number" and vk >= 8 and vk <= 254 and vk == floor(vk) and vk ~= 27, "Use a VK key code (8..254), except Escape")
 	self.Keybind = vk; previousKey = iskeypressed(vk)
 end
+function app:OnUnload(fn)
+	assert(type(fn) == "function", "OnUnload requires a function")
+	self._teardown = self._teardown or {}
+	self._teardown[#self._teardown + 1] = fn
+	return fn
+end
 function app:Destroy()
 	if not self.Alive then return end
 	self.Alive = false
+	for _, fn in ipairs(self._teardown or {}) do pcall(fn) end
+	self._teardown = {}
 	if connection then connection:Disconnect() end
 	if introSound then pcall(function() introSound:Destroy() end); introSound = nil end
 	avatarBytes = nil
@@ -414,7 +418,6 @@ function app:AddTab(o)
 	if type(o) == "string" then o = {Title = o} end
 	o = o or {}; local tab = setmetatable({Id = uid(), Title = short(o.Title or "Tab", 18), Icon = o.Icon or "script", Controls = {}, Page = 1, Scroll = 0}, Tab)
 	animations[tab.Id .. "appear"] = 0
-	-- Pin Home top, Settings bottom: new tabs insert above Settings
 	local st = rawget(self, "Settings")
 	if st and tab ~= st and tab ~= rawget(self, "Home") and self.Tabs[#self.Tabs] == st then
 		table.insert(self.Tabs, #self.Tabs, tab)
@@ -519,7 +522,6 @@ local function renderControl(c, py, index, clip)
 end
 local function renderPopup()
 	if not popup then return end
-	-- SOLID: dropdown opens/closes instantly, no fade (crisp)
 	local p = popup; local c = p.control; local reveal = 1; local py = p.y
 	if p.Closing then popup = nil; return end
 	local count = min(4, #c.Options - p.offset); local extra = #c.Options > 4 and 29 or 0
@@ -697,7 +699,6 @@ local function render()
 	down = active and ismouse1pressed() and not (app.InputGuard and app.InputGuard()); click = down and not previousDown; previousDown = down
 	mx, my = mouse.X, mouse.Y
 	if not down then drag = nil; slide = nil; scrollGrab = nil end
-	-- Scroll: drag content vertically, drag the scrollbar thumb, or hold Up/Down over content
 	if click and selected and introDone and app.Visible and a > 0.5 and not popup and not capture and not closeConfirm and not closeConfirmClosing and not closingStarted then
 		if mx >= x + contentLeft * S and mx <= x + 761 * S and my >= y + 92 * S and my <= y + 445 * S then
 			scrollGrab = {y = my, s = selected.Scroll or 0}
@@ -774,13 +775,11 @@ local function render()
 	local sidebarText = clamp((sidebarOpen - .60) / .40, 0, 1)
 	local navWidth = 43 + 108 * sidebarOpen
 	if a > 0.005 then
-		-- Base/tint follow the Background opacity slider
 		box("rim", -1, -1, W + 2, H + 2, ink, 0.10, 18, 9)
 		box("base", 0, 0, W, H, tint, app.BgOpacity, 17, 10)
 		box("tint", 0, 0, W, H, tint, app.BgOpacity * 0.176, 17, 12)
 		if app.Effects then
 			local strength = app.EffectStrength
-			-- Two solid arcs on opposite sides of the border
 			local head1 = motionClock * 190
 			local head2 = head1 + borderLength * 0.5
 			local ARC_LEN, ARC_STEPS = 100, 12
@@ -804,18 +803,14 @@ local function render()
 		end
 		box("sidebar", 10, 10, sidebarWidth, H - 20, mix(tint, black, .24), app.BgOpacity * 0.85, 12, 15)
 		box("sidebarRule", 10 + sidebarWidth, 25, 1, H - 50, ink, .06, 0, 16)
-
-		-- Player header: avatar portrait + in-game username (fallback to OS text)
 		box("logoBg", 24, 24, 37, 37, accent, 0.14, 10, 20)
 		if not portrait("brandPortrait", avatarBytes, 26, 26, 33, 33, 1, 9, 21) then
 			label("osLogo", "OS", 30, 29, 18, accent, 1, true, 21)
 		end
 		label("osUser", short(playerName, 14), 70, 22, 14, ink, sidebarText, true, 42)
 		label("osSub", "OSGAMES", 70, 42, 9, accent, .85 * sidebarText, true, 42)
-
 		box("headerRule", contentLeft, 78, 761 - contentLeft, 1, ink, .075, 0, 20)
 		label("sectionSub", selected == home and "" or selected == settings and "" or "", contentLeft + 1, 59, 11, muted, contentA)
-
 		for i = 1, min(5, #app.Tabs - tabOffset) do
 			local tab = app.Tabs[i + tabOffset]; local enter = ease(tab.Id .. "appear", 1, 11); local py = 101 + (i - 1) * 53 + (1 - enter) * 9
 			local over = hit(21, py, navWidth, 43)
@@ -846,7 +841,6 @@ local function render()
 			icon("welcomeHouse", "home", contentLeft + 39, 224 + bob + enter * 10, accent, ca, 43, 0, 2.5)
 			label("welcomeText", "Welcome.", contentLeft + 97, 211 + enter * 12, 34, ink, ca, true)
 		else
-			-- Scroll view: cards fade out past the clip lines
 			for i = 1, #selected.Controls do
 				local c = selected.Controls[i]
 				local cpy = 99 + (i - 1) * 77 - sc
@@ -856,7 +850,6 @@ local function render()
 				end
 				if not app.Alive then return end
 			end
-			-- Scrollbar (only when there is more to see)
 			local ms = maxScroll()
 			if ms > 0 then
 				local totalH = #selected.Controls * 77 - 12
