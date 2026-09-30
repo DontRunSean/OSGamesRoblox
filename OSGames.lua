@@ -1,4 +1,4 @@
--- OSGames UI v2.0.0-osgames (optimized fork)
+-- OSGames UI v2.0.2-osgames (optimized fork)
 -- Optimized: fewer per-frame drawings, cached math, avatar header, no brand-vector cost
 local env = getfenv()
 local oldOS = env.OSGames or rawget(_G, "OSGames")
@@ -35,7 +35,7 @@ end
 local function short(s, n) s = tostring(s or ""); return #s > n and s:sub(1, n - 3) .. "..." or s end
 local function smooth(t) t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 15) + 10) end
 
-local app = {Name = "OSGames", Version = "2.0.1-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false}
+local app = {Name = "OSGames", Version = "2.0.2-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false}
 env.OSGames = app; pcall(rawset, _G, "OSGames", app)
 env.JDUI = nil; pcall(rawset, _G, "JDUI", nil)
 
@@ -86,7 +86,13 @@ local a, contentA, dt, last = 0, 1, 0, tick()
 local mx, my, down, click, active = 0, 0, false, false, true
 local previousDown, previousKey = false, false
 local drag, slide, popup, capture = nil, nil, nil, nil
+local scrollGrab = nil
 local tabOffset, selected = 0, nil
+-- Scroll view: cards at 99 + (i-1)*77, visible 92..400 (cards slide behind the lines)
+local function maxScroll()
+	local n = selected and #selected.Controls or 0
+	return max(0, n * 77 - 313)
+end
 local sidebarOpen, sidebarWidth, contentLeft = 0, 66, 99
 local sidebarLeaveTime = 0
 local closeConfirm = false
@@ -354,7 +360,7 @@ function Tab:Select()
 end
 function app:AddTab(o)
 	if type(o) == "string" then o = {Title = o} end
-	o = o or {}; local tab = setmetatable({Id = uid(), Title = short(o.Title or "Tab", 18), Icon = o.Icon or "script", Controls = {}, Page = 1}, Tab)
+	o = o or {}; local tab = setmetatable({Id = uid(), Title = short(o.Title or "Tab", 18), Icon = o.Icon or "script", Controls = {}, Page = 1, Scroll = 0}, Tab)
 	animations[tab.Id .. "appear"] = 0
 	-- Pin Home top, Settings bottom: new tabs insert above Settings
 	local st = rawget(self, "Settings")
@@ -367,10 +373,10 @@ function app:AddTab(o)
 end
 local home = app:AddTab({Title = "Home", Icon = "home"}); app.Home = home
 local settings = app:AddTab({Title = "Settings", Icon = "gear"}); app.Settings = settings
-home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page. More tabs go here.", Icon = "home"})
+home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page.", Icon = "home"})
 home:AddLabel({Title = "Thanks to 9mfg", Description = "original UI creator", Icon = "spark"})
 home:AddLabel({Title = "Thanks to objectivizing", Description = "UI lib source used", Icon = "layers"})
-home:AddLabel({Title = "Edited by DontRunSean", Description = "me xD", Icon = "bolt"})
+home:AddLabel({Title = "Edited by DontRunSean", Description = "OSGames", Icon = "bolt"})
 local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black", "Red", "Orange", "Cyan", "Pink"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
 settings:AddSlider({Title = "Background opacity", Description = "window solidity in %", Min = 20, Max = 100, Step = 5, Default = 85, Callback = function(v) app.BgOpacity = v / 100 end})
 settings:AddToggle({Title = "RGB spin", Description = "rainbow border arcs", Default = false, Callback = function(v) app.RGBSpin = v end})
@@ -610,6 +616,7 @@ local function renderIntro(now, vp)
 	local opacity = reveal * (1 - leave)
 	local scale = min(1, (vp.X - 24) / 340, (vp.Y - 24) / 136)
 	local cx, cy = vp.X / 2, vp.Y / 2 + (1 - reveal) * 8 - leave * 8
+	rect("intro:bg", 0, 0, vp.X, vp.Y, black, opacity * 0.85, 0, 115)
 	local function logoEase(t)
 		t = clamp(t, 0, 1)
 		return smooth(t), sin(t * pi) * (1 - t)
@@ -634,7 +641,20 @@ local function render()
 	active = type(isrbxactive) ~= "function" or isrbxactive()
 	down = active and ismouse1pressed() and not (app.InputGuard and app.InputGuard()); click = down and not previousDown; previousDown = down
 	mx, my = mouse.X, mouse.Y
-	if not down then drag = nil; slide = nil end
+	if not down then drag = nil; slide = nil; scrollGrab = nil end
+	-- Drag-to-scroll: press in content area then drag vertically (Matcha has no wheel-read API)
+	if click and selected and introDone and app.Visible and a > 0.5 and not popup and not capture and not closeConfirm and not closeConfirmClosing and not closingStarted then
+		if mx >= x + contentLeft * S and mx <= x + 761 * S and my >= y + 92 * S and my <= y + 445 * S then
+			scrollGrab = {y = my, s = selected.Scroll or 0}
+		end
+	end
+	if scrollGrab and down and selected and not slide and not popup and not capture then
+		local dy = (scrollGrab.y - my) / S
+		if abs(dy) > 6 then
+			selected.Scroll = clamp(scrollGrab.s + dy, 0, maxScroll())
+			click = false
+		end
+	end
 	local wasCapture = capture ~= nil
 	if capture and active then
 		for k = 8, 254 do
@@ -744,7 +764,7 @@ local function render()
 		label("keyhint", keyHintCache, 56, 420, 9, muted, 0.9 * sidebarText, true)
 		label("title", selected.Title, contentLeft, 29, 25, ink, contentA, true)
 		smallButton("close", "close", 752, 23, requestClose)
-		local pages = max(1, math.ceil(#selected.Controls / 4)); selected.Page = clamp(selected.Page, 1, pages)
+		local sc = selected.Scroll or 0
 		if selected == home and #home.Controls == 1 then
 			local ca = contentA
 			local bob = app.ReducedMotion and 0 or sin(motionClock * 1.5) * 2
@@ -753,12 +773,29 @@ local function render()
 			icon("welcomeHouse", "home", contentLeft + 39, 224 + bob + enter * 10, accent, ca, 43, 0, 2.5)
 			label("welcomeText", "Welcome.", contentLeft + 97, 211 + enter * 12, 34, ink, ca, true)
 		else
-			for i = 1, 4 do local c = selected.Controls[(selected.Page - 1) * 4 + i]; if c then renderControl(c, 99 + (i - 1) * 77, i); if not app.Alive then return end end end
-		end
-		if pages > 1 then
-			label("pagenumber", selected.Page .. " / " .. pages, 632, 421, 11, muted, 1)
-			smallButton("prevpage", "left", 681, 410, function() selected.Page = max(1, selected.Page - 1); replayTab(selected) end)
-			smallButton("nextpage", "right", 719, 410, function() selected.Page = min(pages, selected.Page + 1); replayTab(selected) end)
+			-- Scroll view: every control renders at its scrolled position, clipped by the masks
+			for i = 1, #selected.Controls do
+				local c = selected.Controls[i]
+				local cpy = 99 + (i - 1) * 77 - sc
+				if cpy + 65 >= 92 and cpy <= 400 then
+					renderControl(c, cpy, i)
+				end
+				if not app.Alive then return end
+			end
+			-- Masks: cards slide up behind the lines
+			box("maskT", contentLeft, 78, W - contentLeft, 18, tint, 1, 0, 60)
+			box("maskTLine", contentLeft, 95, W - contentLeft, 1, ink, .12, 0, 61)
+			box("maskB", contentLeft, 400, W - contentLeft, 50, tint, 1, 0, 60)
+			box("maskBLine", contentLeft, 399, W - contentLeft, 1, ink, .12, 0, 61)
+			-- Scrollbar (only when there is more to see)
+			local ms = maxScroll()
+			if ms > 0 then
+				local totalH = #selected.Controls * 77 - 12
+				local th = clamp(301 * (301 / totalH), 30, 301)
+				local ty = 99 + ((sc / ms) * (301 - th))
+				box("scrollTrack", 768, 99, 4, 301, ink, .12, 2, 60)
+				box("scrollThumb", 768, ty, 4, th, accent, .8, 2, 61)
+			end
 		end
 		for i = #pulsePoints, 1, -1 do
 			local p = pulsePoints[i]; local age = motionClock - p.time
