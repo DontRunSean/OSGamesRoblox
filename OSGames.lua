@@ -426,18 +426,18 @@ function app:AddTab(o)
 	end
 	if not selected then selected = tab end; return tab
 end
-local home = app:AddTab({Title = "Home", Icon = "home"}); app.Home = home
+local home = app:AddTab({Title = "Home Page", Icon = "home"}); app.Home = home
 local settings = app:AddTab({Title = "Settings", Icon = "gear"}); app.Settings = settings
-home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page.", Icon = "home"})
+home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page | DontRunSean", Icon = "home"})
 home:AddLabel({Title = "Thanks to 9mfg", Description = "original UI creator", Icon = "spark"})
 home:AddLabel({Title = "Thanks to objectivizing", Description = "UI lib source used", Icon = "layers"})
-home:AddLabel({Title = "Edited by DontRunSean", Description = "OSGames", Icon = "bolt"})
+home:AddLabel({Title = "CLICK DRAG TO SCROLL", Description = "Idk how to use scrollwheal xD", Icon = "bolt"})
 local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black", "Red", "Orange", "Cyan", "Pink"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
 settings:AddSlider({Title = "Background opacity", Description = "window solidity in %", Min = 20, Max = 100, Step = 5, Default = 85, Callback = function(v) app.BgOpacity = v / 100 end})
 settings:AddToggle({Title = "RGB spin", Description = "rainbow border arcs", Default = false, Callback = function(v) app.RGBSpin = v end})
 settings:_add("keybind", {Title = "Menu keybind", Description = "Click to record a key. Escape cancels."})
-settings:AddButton({Title = "Test notification", Description = "Test.", Icon = "info", ButtonText = "Test", Callback = function()
-	app:Notify({Title = "Notification test", Content = "it works.", Type = "success", Duration = 5})
+settings:AddButton({Title = "Test notification", Description = "Test it", Icon = "info", ButtonText = "Test", Callback = function()
+	app:Notify({Title = "Notification test", Content = "If you can read this then it worked.", Type = "success", Duration = 5})
 end})
 
 local function glow(id, px, py, w, h, strength, z)
