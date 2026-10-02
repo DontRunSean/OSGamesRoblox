@@ -1,4 +1,3 @@
--- OSGames UI v2.0.3-osgames
 local env = getfenv()
 local oldOS = env.OSGames or rawget(_G, "OSGames")
 if type(oldOS) == "table" and oldOS.Destroy then pcall(oldOS.Destroy, oldOS) end
@@ -34,7 +33,7 @@ end
 local function short(s, n) s = tostring(s or ""); return #s > n and s:sub(1, n - 3) .. "..." or s end
 local function smooth(t) t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 15) + 10) end
 
-local app = {Name = "OSGames", Version = "2.0.3-osgames", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false, _teardown = {}}
+local app = {Name = "OSGames", Version = "2.0.8", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false, _teardown = {}}
 env.OSGames = app; pcall(rawset, _G, "OSGames", app)
 env.JDUI = nil; pcall(rawset, _G, "JDUI", nil)
 
@@ -130,8 +129,27 @@ local x, y, S, W, H = 100, 100, 1, 800, 450
 local a, contentA, dt, last = 0, 1, 0, tick()
 local mx, my, down, click, active = 0, 0, false, false, true
 local previousDown, previousKey = false, false
+local rdown, rclick, previousRDown = false, false, false
+local function rightHeld()
+	if type(ismouse2pressed) == "function" then
+		local ok, v = pcall(ismouse2pressed)
+		if ok then return v and true or false end
+	end
+	return false
+end
+local hotPrev = {} -- [vk] = bool, rising-edge state for per-control hotkeys
 local drag, slide, popup, capture = nil, nil, nil, nil
 local scrollGrab = nil
+local inputBlocked = false
+local function setGameBlock(block)
+	if inputBlocked == block then return end
+	inputBlocked = block
+	pcall(function()
+		if type(setrobloxinput) == "function" then
+			setrobloxinput(not block)
+		end
+	end)
+end
 local tabOffset, selected = 0, nil
 local function maxScroll()
 	local n = selected and #selected.Controls or 0
@@ -266,6 +284,7 @@ local paths = {
 	sliders = {{2,5,6,5},{10,5,18,5},{2,15,11,15},{15,15,18,15},{7.4,2,6.4,2.4},{6.4,2.4,6,3.4},{6,3.4,6,6.6},{6,6.6,6.4,7.7},{6.4,7.7,7.4,8},{7.4,8,8.6,8},{8.6,8,9.7,7.7},{9.7,7.7,10,6.6},{10,6.6,10,3.4},{10,3.4,9.7,2.4},{9.7,2.4,8.6,2},{8.6,2,7.4,2},{11,13.4,11.4,12.4},{11.4,12.4,12.4,12},{12.4,12,13.6,12},{13.6,12,14.7,12.4},{14.7,12.4,15,13.4},{15,13.4,15,16.6},{15,16.6,14.7,17.7},{14.7,17.7,13.6,18},{13.6,18,12.4,18},{12.4,18,11.4,17.7},{11.4,17.7,11,16.6},{11,16.6,11,13.4}},
 	home = {{1,9,9,1.9},{9,1.9,10,1.5},{10,1.5,11,1.9},{11,1.9,19,9},{3,8,3,16.6},{3,16.6,3.4,17.7},{3.4,17.7,4.4,18},{4.4,18,6.6,18},{6.6,18,7.7,17.7},{7.7,17.7,8,16.6},{8,16.6,8,13.4},{8,13.4,8.4,12.4},{8.4,12.4,9.4,12},{9.4,12,10.6,12},{10.6,12,11.7,12.4},{11.7,12.4,12,13.4},{12,13.4,12,16.6},{12,16.6,12.4,17.7},{12.4,17.7,13.4,18},{13.4,18,15.6,18},{15.6,18,16.7,17.7},{16.7,17.7,17,16.6},{17,16.6,17,8},{13,3,13,1.9},{13,1.9,13.2,1.2},{13.2,1.2,13.9,1},{13.9,1,14.7,1},{14.7,1,15.7,1.3},{15.7,1.3,16,2.4},{16,2.4,16,6},{6,8,8,8}},
 	close = {{5,5,15,15},{15,5,5,15}},
+	minus = {{5,10,15,10}},
 	script = {{6,4,2.8,8.8},{2.8,8.8,2.4,10},{2.4,10,2.8,11.2},{2.8,11.2,6,16},{14,4,17.2,8.8},{17.2,8.8,17.6,10},{17.6,10,17.2,11.2},{17.2,11.2,14,16},{12,3,8,17}},
 	down = {{5,7,9,11},{9,11,10,11.5},{10,11.5,11,11},{11,11,15,7}},
 	up = {{5,12,9,8},{9,8,10,7.5},{10,7.5,11,8},{11,8,15,12}},
@@ -327,11 +346,89 @@ function app:OnUnload(fn)
 	self._teardown[#self._teardown + 1] = fn
 	return fn
 end
+-- Tracks threads and drawings made while loaded so unload can kill them all.
+local killSwitch = false
+local trackedThreads = {}
+local trackedDrawings = {}
+local hooksInstalled = false
+local origTaskSpawn, origTaskDefer, origTaskDelay, origTaskWait
+local origSpawn, origWait, origDrawingNew
+local function trackCurrentThread()
+	local co = coroutine.running()
+	if co then trackedThreads[co] = true end
+	return co
+end
+local function wrapSpawned(fn)
+	return function(...)
+		local co = trackCurrentThread()
+		local out = table.pack(pcall(fn, ...))
+		if co then trackedThreads[co] = nil end
+		if not out[1] then error(out[2], 0) end
+		return table.unpack(out, 2, out.n)
+	end
+end
+local function killableWait(orig)
+	return function(...)
+		if killSwitch then error("OSGames unloaded", 0) end
+		return orig(...)
+	end
+end
+local function hookGlobals()
+	if hooksInstalled then return end
+	hooksInstalled = true
+	if type(task) == "table" then
+		if type(task.spawn) == "function" then origTaskSpawn = task.spawn; task.spawn = function(fn, ...) return origTaskSpawn(wrapSpawned(fn), ...) end end
+		if type(task.defer) == "function" then origTaskDefer = task.defer; task.defer = function(fn, ...) return origTaskDefer(wrapSpawned(fn), ...) end end
+		if type(task.delay) == "function" then origTaskDelay = task.delay; task.delay = function(s, fn, ...) return origTaskDelay(s, wrapSpawned(fn), ...) end end
+		if type(task.wait) == "function" then origTaskWait = task.wait; task.wait = killableWait(origTaskWait) end
+	end
+	if type(spawn) == "function" then origSpawn = spawn; spawn = function(fn, ...) return origSpawn(wrapSpawned(fn), ...) end end
+	if type(wait) == "function" then origWait = wait; wait = killableWait(origWait) end
+	if type(Drawing) == "table" and type(Drawing.new) == "function" then
+		origDrawingNew = Drawing.new
+		Drawing.new = function(kind, ...)
+			local d = origDrawingNew(kind, ...)
+			if d ~= nil then trackedDrawings[d] = true end
+			return d
+		end
+	end
+end
+local function unhookGlobals()
+	if not hooksInstalled then return end
+	hooksInstalled = false
+	if type(task) == "table" then
+		if origTaskSpawn then task.spawn = origTaskSpawn; origTaskSpawn = nil end
+		if origTaskDefer then task.defer = origTaskDefer; origTaskDefer = nil end
+		if origTaskDelay then task.delay = origTaskDelay; origTaskDelay = nil end
+		if origTaskWait then task.wait = origTaskWait; origTaskWait = nil end
+	end
+	if origSpawn then spawn = origSpawn; origSpawn = nil end
+	if origWait then wait = origWait; origWait = nil end
+	if origDrawingNew then Drawing.new = origDrawingNew; origDrawingNew = nil end
+end
+local function killAll()
+	killSwitch = true
+	for co in pairs(trackedThreads) do
+		trackedThreads[co] = nil
+		if co ~= coroutine.running() and coroutine.status(co) ~= "dead" then
+			if type(coroutine.close) == "function" then pcall(coroutine.close, co) end
+		end
+	end
+	for d in pairs(trackedDrawings) do
+		trackedDrawings[d] = nil
+		pcall(function() d:Remove() end)
+	end
+end
+hookGlobals()
 function app:Destroy()
 	if not self.Alive then return end
 	self.Alive = false
+	pcall(function() if type(setrobloxinput) == "function" then setrobloxinput(true) end end)
+	inputBlocked = false
 	for _, fn in ipairs(self._teardown or {}) do pcall(fn) end
 	self._teardown = {}
+	killAll()
+	unhookGlobals()
 	if connection then connection:Disconnect() end
 	if introSound then pcall(function() introSound:Destroy() end); introSound = nil end
 	avatarBytes = nil
@@ -377,6 +474,63 @@ function Control:SetValue(value, silent)
 	return self
 end
 Control.Set = Control.SetValue
+local function normalizeHotkey(v)
+	if v == nil then return nil end
+	if type(v) == "number" then
+		v = math.floor(v)
+		if v >= 8 and v <= 254 then return v end
+		return nil
+	end
+	if type(v) == "string" then
+		local t = v:upper():gsub("%s+","")
+		if #t == 1 then
+			local b = string.byte(t)
+			if (b >= 0x30 and b <= 0x39) or (b >= 0x41 and b <= 0x5A) then return b end
+			return nil
+		end
+		local fn = t:match("^F(%d+)$")
+		if fn then
+			local n = tonumber(fn)
+			if n and n >= 1 and n <= 24 then return 0x6F + n end
+			return nil
+		end
+		local named = {SHIFT=0x10,CTRL=0x11,ALT=0x12,SPACE=0x20,TAB=0x09,ENTER=0x0D,INSERT=0x2D,HOME=0x24,END=0x23,DELETE=0x2E,CAPSLOCK=0x14}
+		if named[t] then return named[t] end
+		return nil
+	end
+	return nil
+end
+function Control:SetHotkey(v)
+	self.Hotkey = normalizeHotkey(v)
+	return self
+end
+function Control:GetHotkey() return self.Hotkey end
+function Control:ClearHotkey() self.Hotkey = nil; return self end
+Control.BindHotkey = Control.SetHotkey
+Control.UnbindHotkey = Control.ClearHotkey
+function Control:Trigger()
+	if self.Kind == "toggle" then
+		return self:SetValue(not self.Value)
+	elseif self.Kind == "button" then
+		animations[self.Id .. "press"] = 1
+		fire(self.Callback)
+		return self
+	end
+	return self
+end
+function app:Minimize()
+	if not self.Alive or closingStarted then return end
+	self.Visible = false; popup = nil; capture = nil; slide = nil; drag = nil
+end
+function app:Show()
+	if not self.Alive then return end
+	self.Visible = true
+end
+function app:Toggle()
+	if not self.Alive or closingStarted then return end
+	self.Visible = not self.Visible; popup = nil; capture = nil
+end
+local function minimizeWindow() app:Minimize() end
 function Tab:_add(kind, o)
 	assert(app.Alive, "UI has been destroyed")
 	o = o or {}; local c = setmetatable({Id = uid(), Kind = kind, Title = short(o.Title or kind, 52), Description = short(o.Description or "", 68), Callback = o.Callback}, Control)
@@ -389,7 +543,7 @@ function Tab:_add(kind, o)
 	if kind == "toggle" then c.Value = not not o.Default elseif kind == "slider" then c:SetValue(o.Default or c.Min, true)
 	elseif kind == "dropdown" then c:SetValue(o.Default or c.Options[1], true) end
 	animations[c.Id .. "appear"] = 0
-	self.Controls[#self.Controls + 1] = c; return c
+	c.Hotkey = normalizeHotkey(o.Hotkey); self.Controls[#self.Controls + 1] = c; return c
 end
 function Tab:AddButton(o) return self:_add("button", o) end
 function Tab:AddToggle(o) return self:_add("toggle", o) end
@@ -431,7 +585,7 @@ local settings = app:AddTab({Title = "Settings", Icon = "gear"}); app.Settings =
 home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page | DontRunSean", Icon = "home"})
 home:AddLabel({Title = "Thanks to 9mfg", Description = "original UI creator", Icon = "spark"})
 home:AddLabel({Title = "Thanks to objectivizing", Description = "UI lib source used", Icon = "layers"})
-home:AddLabel({Title = "CLICK DRAG TO SCROLL", Description = "Idk how to use scroll wheel", Icon = "bolt"})
+home:AddLabel({Title = "HOLD ^ v chevrons to scroll", Description = "Or drag content / thumb. Keys work too", Icon = "bolt"})
 local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black", "Red", "Orange", "Cyan", "Pink"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
 settings:AddSlider({Title = "Background opacity", Description = "window solidity in %", Min = 20, Max = 100, Step = 5, Default = 85, Callback = function(v) app.BgOpacity = v / 100 end})
 settings:AddToggle({Title = "RGB spin", Description = "rainbow border arcs", Default = false, Callback = function(v) app.RGBSpin = v end})
@@ -457,6 +611,10 @@ local function smallButton(id, glyph, px, py, fn, modal, z)
 end
 local function beginCapture(control)
 	capture = {keys = {}, control = control}; popup = nil
+	for k = 8, 254 do capture.keys[k] = iskeypressed(k) end
+end
+local function beginHotkeyCapture(control)
+	capture = {keys = {}, hotkeyControl = control}; popup = nil
 	for k = 8, 254 do capture.keys[k] = iskeypressed(k) end
 end
 local function renderControl(c, py, index, clip)
@@ -486,12 +644,20 @@ local function renderControl(c, py, index, clip)
 		box(id .. "button", 650 + pulse * 2, py + 15 + pulse, 94 - pulse * 4, 34 - pulse * 2, accent, (0.14 + pulse * 0.25 + ease(id .. "hover", over and 0.13 or 0)) * contentA, 9, 30)
 		label(id .. "run", c.ButtonText, 667, py + 24, 12, ink, contentA, true); icon(id .. "arrow", "right", 717, py + 22, accent, contentA)
 		if over and click then click = false; animations[id .. "press"] = 1; fire(c.Callback) end
+		if hovered and rclick and not capture and not popup then rclick = false; beginHotkeyCapture(c) end
+		if capture and capture.hotkeyControl == c then label(id .. "hotkey", "Press a key...", 480, py + 23, 12, accent, contentA, true)
+		elseif c.Hotkey then label(id .. "hotkey", "HotKey: " .. keyName(c.Hotkey), 480, py + 23, 12, muted, contentA, true)
+		else label(id .. "hotkey", "Right-click to bind", 480, py + 23, 12, muted, 0.5 * contentA, true) end
 	elseif c.Kind == "toggle" then
 		local v = ease(id .. "switch", c.Value and 1 or 0)
 		glow(id .. "toggleGlow", 699, py + 25, 38, 16, v * contentA, 29)
 		box(id .. "switch", 695, py + 21, 46, 24, mix(muted, accent, v), (0.16 + v * 0.5) * contentA, 12, 30)
 		box(id .. "knob", 699 + 22 * v, py + 25, 16, 16, ink, contentA, 8, 31)
 		if hit(680, py + 12, 65, 42) and click then click = false; c:SetValue(not c.Value) end
+		if hovered and rclick and not capture and not popup then rclick = false; beginHotkeyCapture(c) end
+		if capture and capture.hotkeyControl == c then label(id .. "hotkey", "Press a key...", 480, py + 23, 12, accent, contentA, true)
+		elseif c.Hotkey then label(id .. "hotkey", "HotKey: " .. keyName(c.Hotkey), 480, py + 23, 12, muted, contentA, true)
+		else label(id .. "hotkey", "Right-click to bind", 480, py + 23, 12, muted, 0.5 * contentA, true) end
 	elseif c.Kind == "dropdown" then
 		local over = hit(579, py + 15, 165, 35)
 		box(id .. "select", 579, py + 15, 165, 35, ink, (0.055 + ease(id .. "hover", over and 0.065 or 0)) * contentA, 8, 30)
@@ -697,13 +863,37 @@ local function render()
 	if not app.ReducedMotion then motionClock = motionClock + dt end
 	active = type(isrbxactive) ~= "function" or isrbxactive()
 	down = active and ismouse1pressed() and not (app.InputGuard and app.InputGuard()); click = down and not previousDown; previousDown = down
+	rdown = active and rightHeld() and not (app.InputGuard and app.InputGuard()); rclick = rdown and not previousRDown; previousRDown = rdown
 	mx, my = mouse.X, mouse.Y
+	-- Stops game clicks passing through the menu. Restored when the cursor leaves.
+	do
+		local wantBlock = introDone and app.Visible and a > 0.5 and active and not closingStarted
+			and mx >= x - 4 and mx <= x + W * S + 4 and my >= y - 4 and my <= y + H * S + 4
+		setGameBlock(wantBlock and true or false)
+	end
 	if not down then drag = nil; slide = nil; scrollGrab = nil end
+	-- No wheel in Matcha, so scrolling is content-drag plus scrollbar/keys.
 	if click and selected and introDone and app.Visible and a > 0.5 and not popup and not capture and not closeConfirm and not closeConfirmClosing and not closingStarted then
-		if mx >= x + contentLeft * S and mx <= x + 761 * S and my >= y + 92 * S and my <= y + 445 * S then
+		local ms0 = maxScroll()
+		if ms0 > 0 and mx >= x + 764 * S and mx <= x + 776 * S and my >= y + 95 * S and my <= y + 404 * S then
+			local totalH0 = #selected.Controls * 77 - 12
+			local th0 = clamp(301 * (301 / totalH0), 30, 301)
+			local sc0 = selected.Scroll or 0
+			local ty0 = 99 + ((sc0 / ms0) * (301 - th0))
+			local myLocal = (my - y) / S
+			if myLocal >= ty0 and myLocal <= ty0 + th0 then
+				scrollGrab = {track = true, grabOff = myLocal - ty0}
+			else
+				if myLocal < ty0 then
+					selected.Scroll = clamp(sc0 - 300, 0, ms0)
+				else
+					selected.Scroll = clamp(sc0 + 300, 0, ms0)
+				end
+				scrollGrab = nil
+				click = false
+			end
+		elseif mx >= x + contentLeft * S and mx <= x + 761 * S and my >= y + 92 * S and my <= y + 445 * S then
 			scrollGrab = {y = my, s = selected.Scroll or 0}
-		elseif maxScroll() > 0 and mx >= x + 764 * S and mx <= x + 776 * S and my >= y + 95 * S and my <= y + 404 * S then
-			scrollGrab = {track = true}
 		end
 	end
 	if scrollGrab and down and selected and not slide and not popup and not capture then
@@ -711,10 +901,11 @@ local function render()
 		if scrollGrab.track and ms > 0 then
 			local totalH = #selected.Controls * 77 - 12
 			local th = clamp(301 * (301 / totalH), 30, 301)
-			selected.Scroll = clamp(((my - y) / S - 99 - th * 0.5) / (301 - th) * ms, 0, ms)
+			local grab = scrollGrab.grabOff or (th * 0.5)
+			selected.Scroll = clamp(((my - y) / S - 99 - grab) / (301 - th) * ms, 0, ms)
 			click = false
 		else
-			local dy = (scrollGrab.y - my) / S
+			local dy = (scrollGrab.y - my) / S * 1.6
 			if abs(dy) > 6 then
 				selected.Scroll = clamp(scrollGrab.s + dy, 0, ms)
 				click = false
@@ -722,9 +913,31 @@ local function render()
 		end
 	end
 	if selected and active and introDone and app.Visible and not popup and not capture and not down then
-		if mx >= x + contentLeft * S and mx <= x + 761 * S and my >= y + 92 * S and my <= y + 400 * S then
-			if iskeypressed(0x26) then selected.Scroll = clamp((selected.Scroll or 0) - 220 * dt, 0, maxScroll()) end
-			if iskeypressed(0x28) then selected.Scroll = clamp((selected.Scroll or 0) + 220 * dt, 0, maxScroll()) end
+		if mx >= x + contentLeft * S and mx <= x + 776 * S and my >= y + 92 * S and my <= y + 445 * S then
+			local ms = maxScroll()
+			if ms > 0 then
+				if iskeypressed(0x26) then selected.Scroll = clamp((selected.Scroll or 0) - 650 * dt, 0, ms) end
+				if iskeypressed(0x28) then selected.Scroll = clamp((selected.Scroll or 0) + 650 * dt, 0, ms) end
+				if iskeypressed(0x21) then selected.Scroll = clamp((selected.Scroll or 0) - 900 * dt, 0, ms) end
+				if iskeypressed(0x22) then selected.Scroll = clamp((selected.Scroll or 0) + 900 * dt, 0, ms) end
+				if iskeypressed(0x24) then selected.Scroll = 0 end
+				if iskeypressed(0x23) then selected.Scroll = ms end
+			end
+		end
+	end
+	-- Hold-to-scroll chevrons above and below the scrollbar.
+	if selected and active and introDone and app.Visible and down and not popup and not capture and not slide and not drag then
+		local ms2 = maxScroll()
+		if ms2 > 0 then
+			local upOver = mx >= x + 760 * S and mx <= x + 780 * S and my >= y + 76 * S and my <= y + 96 * S
+			local dnOver = mx >= x + 760 * S and mx <= x + 780 * S and my >= y + 404 * S and my <= y + 424 * S
+			if upOver then
+				selected.Scroll = clamp((selected.Scroll or 0) - 550 * dt, 0, ms2)
+				click = false
+			elseif dnOver then
+				selected.Scroll = clamp((selected.Scroll or 0) + 550 * dt, 0, ms2)
+				click = false
+			end
 		end
 	end
 	local wasCapture = capture ~= nil
@@ -733,7 +946,8 @@ local function render()
 			local held = iskeypressed(k)
 			if held and not capture.keys[k] and k ~= 16 and k ~= 17 and k ~= 18 then
 				if k ~= 27 then
-					if capture.control then capture.control:SetValue(k) else app:SetKeybind(k) end
+					if capture.hotkeyControl then capture.hotkeyControl:SetHotkey(k)
+					elseif capture.control then capture.control:SetValue(k) else app:SetKeybind(k) end
 				end
 				capture = nil; break
 			end
@@ -743,11 +957,33 @@ local function render()
 	local key = active and iskeypressed(app.Keybind)
 	if key and not previousKey and not wasCapture and introDone and not closeConfirm and not closeConfirmClosing and not closingStarted then app.Visible = not app.Visible; popup = nil; capture = nil end
 	previousKey = key
+	-- Control hotkeys fire on press, even while hidden. Skipped while recording a key.
+	if active and not wasCapture and introDone and not closingStarted then
+		local seenKeys = {}
+		for _, tab in ipairs(app.Tabs) do
+			for _, c in ipairs(tab.Controls) do
+				local hk = c.Hotkey
+				if hk and hk ~= app.Keybind and (c.Kind == "toggle" or c.Kind == "button") and not seenKeys[hk] then
+					seenKeys[hk] = true
+					local ok, held = pcall(iskeypressed, hk)
+					held = ok and held or false
+					if held and not hotPrev[hk] then
+						for _, t2 in ipairs(app.Tabs) do
+							for _, c2 in ipairs(t2.Controls) do
+								if c2.Hotkey == hk and (c2.Kind == "toggle" or c2.Kind == "button") then c2:Trigger() end
+							end
+						end
+					end
+					hotPrev[hk] = held
+				end
+			end
+		end
+	end
 	local camera = workspace.CurrentCamera; local vp = camera and camera.ViewportSize or V(1280, 720)
 	renderIntro(now, vp)
 	S = max(0.2, min(1, (vp.X - 24) / W, (vp.Y - 24) / H))
 	if frame == 1 then x = (vp.X - W * S) / 2; y = (vp.Y - H * S) / 2 end
-	if click and not closeConfirm and not closeConfirmClosing and not closingStarted and hit(0, 0, W - 65, 69) then drag = {mx - x, my - y}; click = false end
+	if click and not closeConfirm and not closeConfirmClosing and not closingStarted and hit(0, 0, W - 105, 69) then drag = {mx - x, my - y}; click = false end
 	if drag and down then x = mx - drag[1]; y = my - drag[2] end
 	x = clamp(x, 8, max(8, vp.X - W * S - 8)); y = clamp(y, 8, max(8, vp.Y - H * S - 8))
 	a = ease("open", app.Visible and (introDone or (introStart and now - introStart >= 2.8)) and 1 or 0, 13); contentA = ease("content", 1, 15)
@@ -831,6 +1067,7 @@ local function render()
 		if keyHintVk ~= app.Keybind then keyHintVk = app.Keybind; keyHintCache = string.upper(keyName(app.Keybind)) end
 		label("keyhint", keyHintCache, 56, 420, 9, muted, 0.9 * sidebarText, true)
 		label("title", selected.Title, contentLeft, 29, 25, ink, contentA, true)
+		smallButton("minimize", "minus", 716, 23, minimizeWindow)
 		smallButton("close", "close", 752, 23, requestClose)
 		local sc = selected.Scroll or 0
 		if selected == home and #home.Controls == 1 then
@@ -857,6 +1094,12 @@ local function render()
 				local ty = 99 + ((sc / ms) * (301 - th))
 				box("scrollTrack", 768, 99, 4, 301, ink, .12, 2, 60)
 				box("scrollThumb", 768, ty, 4, th, accent, .8, 2, 61)
+				local upHov = hit(760, 78, 20, 18)
+				local dnHov = hit(760, 404, 20, 18)
+				box("scrollUpBg", 760, 78, 20, 18, ink, upHov and 0.22 or 0.08, 4, 60)
+				icon("scrollUpI", "up", 760, 78, accent, 0.9, 61, 0, 0.9)
+				box("scrollDnBg", 760, 404, 20, 18, ink, dnHov and 0.22 or 0.08, 4, 60)
+				icon("scrollDnI", "down", 760, 404, accent, 0.9, 61, 0, 0.9)
 			end
 		end
 		for i = #pulsePoints, 1, -1 do
@@ -871,6 +1114,10 @@ local function render()
 		end
 		if not closeConfirm and not closeConfirmClosing and not closingStarted then renderPopup() end
 		renderCloseConfirm()
+		if inputBlocked and active then
+			rect("osCursorRing", mx - 7, my - 7, 14, 14, accent, 0.85, 7, 200)
+			rect("osCursorDot", mx - 2, my - 2, 5, 5, white, 0.95, 2, 201)
+		end
 		if not app.Alive then return end
 	end
 	if renderCloseEffects(now) then return end
