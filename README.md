@@ -1,108 +1,200 @@
-# OSGames UI
 <p align="center">
   <img src="https://i.imgur.com/ndFlWEu.png" width="49%" alt="Home tab" />
   <img src="https://i.imgur.com/sj991Ag.png" width="49%" alt="Settings tab" />
-</p>
-<p align="center">
-  <img src="https://i.imgur.com/IeW4tdV.png" width="320" alt="Notification" />
-</p>
-Lightweight Matcha Drawing UI. Right Shift toggles by default.
 
-## Load UI
+A lightweight, clean external UI library for Roblox (Matcha).
+
+**Default toggle key:** Right Shift
+
+---
+
+## Features
+
+- Smooth animations & modern look
+- 8 built-in themes
+- Tabs + sidebar navigation
+- Buttons, Toggles, Sliders, Dropdowns, Keybinds, Labels
+- Notifications
+- Per-control hotkeys (right-click any button/toggle to bind)
+- Draggable window
+- Avatar display
+- Easy unload with confirmation
+
+---
+
+## Requirements
+
+- **Matcha** executor (or any executor with the Drawing API)
+- Internet access (for avatar + loading)
+
+---
+
+## How to Load
 
 ```lua
 local URL = "https://raw.githubusercontent.com/DontRunSean/OSGamesRoblox/refs/heads/main/OSGames.lua"
 local src = httpget(URL)
 local fn = loadstring(src)
 pcall(fn)
+
 local UI = getfenv().OSGames or rawget(_G, "OSGames")
 ```
 
-## Quick start | example tab
+After loading, the menu appears. Press **Right Shift** to show/hide it.
+
+---
+
+## Quick Example (Template Menu)
 
 ```lua
-local tab = UI:AddTab({Title = "Main", Icon = "bolt"})
+-- Load the library first (see above)
 
-tab:AddButton({
-  Title = "Give speed",
-  Description = "Sets WalkSpeed to 100",
-  ButtonText = "Run",
-  Callback = function()
-    local lp = game:GetService("Players").LocalPlayer
-    local hum = lp.Character and lp.Character:FindFirstChild("Humanoid")
-    if hum then hum.WalkSpeed = 100 end
-  end
+-- Create a new tab
+local Main = UI:AddTab({
+    Title = "Main",
+    Icon = "bolt"
 })
 
-tab:AddToggle({
-  Title = "Auto farm",
-  Description = "Runs while on",
-  Default = false,
-  Callback = function(v)
-    print("toggle:", v)
-  end
+-- Button
+Main:AddButton({
+    Title = "Kill All",
+    Description = "Example button",
+    ButtonText = "Run",
+    Callback = function()
+        print("Button clicked!")
+    end
 })
-```
 
-New tabs insert above Settings automatically. Use `tab:Select()` to switch to a tab.
-
-## Controls
-
-All take `Title`, `Description`, `Icon`. Return a control with `GetValue()` / `SetValue(v)` / `SetText(t)` / `SetDescription(t)`.
-
-```lua
-tab:AddButton({Title = "Hi", Description = "...", ButtonText = "Run", Callback = function() end})
-tab:AddToggle({Title = "Hi", Default = false, Callback = function(v) end})
-tab:AddSlider({Title = "Hi", Min = 0, Max = 100, Step = 1, Default = 50, Callback = function(v) end})
-tab:AddDropdown({Title = "Hi", Options = {"A", "B", "C"}, Default = "A", Callback = function(v) end})
-tab:AddKeybind({Title = "Hi", Description = "..."})
-tab:AddLabel("Just text")
-tab:AddLabel({Title = "Hi", Description = "..."})
-```
-
-Toggle loop pattern:
-
-```lua
-local running = false
-tab:AddToggle({
-  Title = "Loop",
-  Default = false,
-  Callback = function(v)
-    running = v
-    if not v then return end
-    task.spawn(function()
-      while running and UI.Alive do
-        -- work here
-        task.wait(0.5)
-      end
-    end)
-  end
+-- Toggle
+Main:AddToggle({
+    Title = "Auto Farm",
+    Description = "Example toggle",
+    Default = false,
+    Callback = function(value)
+        print("Toggle is now:", value)
+    end
 })
+
+-- Slider
+Main:AddSlider({
+    Title = "WalkSpeed",
+    Description = "Change your speed",
+    Min = 16,
+    Max = 200,
+    Step = 1,
+    Default = 16,
+    Callback = function(value)
+        local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChild("Humanoid")
+        if hum then
+            hum.WalkSpeed = value
+        end
+    end
+})
+
+-- Dropdown
+Main:AddDropdown({
+    Title = "Select Mode",
+    Description = "Choose an option",
+    Options = {"Easy", "Normal", "Hard", "Impossible"},
+    Default = "Normal",
+    Callback = function(value)
+        print("Selected:", value)
+    end
+})
+
+-- Keybind (custom)
+Main:AddKeybind({
+    Title = "Custom Keybind",
+    Description = "Click to set a key"
+})
+
+-- Label
+Main:AddLabel({
+    Title = "Info",
+    Description = "This is just a text label"
+})
+
+-- Optional: switch to the new tab
+Main:Select()
 ```
 
-## Menu settings
+---
+
+## All Controls
+
+| Control     | Example |
+|-------------|---------|
+| **Button**  | `tab:AddButton({Title = "...", Description = "...", ButtonText = "Run", Callback = function() end})` |
+| **Toggle**  | `tab:AddToggle({Title = "...", Default = false, Callback = function(v) end})` |
+| **Slider**  | `tab:AddSlider({Title = "...", Min = 0, Max = 100, Step = 1, Default = 50, Callback = function(v) end})` |
+| **Dropdown**| `tab:AddDropdown({Title = "...", Options = {"A","B","C"}, Default = "A", Callback = function(v) end})` |
+| **Keybind** | `tab:AddKeybind({Title = "...", Description = "..."})` |
+| **Label**   | `tab:AddLabel({Title = "...", Description = "..."})` or `tab:AddLabel("Just text")` |
+
+Every control returns an object with:
+- `:GetValue()`
+- `:SetValue(value)`
+- `:SetText(text)`
+- `:SetDescription(text)`
+- `:SetHotkey(vk)` / `:ClearHotkey()`
+
+---
+
+## Useful Functions
 
 ```lua
-UI:SetTheme("Black")     -- Purple, Green, Blue, Black, Red, Orange, Cyan, Pink
-UI:SetKeybind(0xA1)      -- Right Shift. 0xA0 Left Shift, 0x2D Insert, etc.
-UI:Notify({Title = "Hi", Content = "it works", Type = "success", Duration = 4})
-UI:RequestClose()        -- shows unload confirm
-UI:Destroy()             -- unloads immediately
+UI:SetTheme("Purple")          -- Purple, Green, Blue, Black, Red, Orange, Cyan, Pink
+UI:SetKeybind(0xA1)            -- Change menu toggle key (Right Shift by default)
+UI:Notify({
+    Title = "Success",
+    Content = "It works!",
+    Type = "success",          -- "info", "success", "error"
+    Duration = 4
+})
+UI:Minimize()                  -- Hide the window
+UI:Show()                      -- Show the window
+UI:Toggle()                    -- Toggle visibility
+UI:RequestClose()              -- Show unload confirmation
+UI:Destroy()                   -- Instantly unload everything
 ```
 
-Useful flags: `UI.Visible`, `UI.BgOpacity` (0.2–1), `UI.RGBSpin`, `UI.Effects`, `UI.EffectStrength`.
+### Useful Flags
+
+```lua
+UI.Visible = true/false
+UI.BgOpacity = 0.85            -- 0.2 to 1.0
+UI.RGBSpin = true              -- Rainbow border
+UI.Effects = true
+UI.EffectStrength = 0.8
+UI.ReducedMotion = false
+```
+
+---
 
 ## Icons
 
-`Icon = "..."` on any tab or control. Unknown names fall back to `script`.
+You can set `Icon = "name"` on any tab or control.
 
-Available (18):
+**Available icons:**
+`spark` · `layers` · `bolt` · `shield` · `palette` · `power` · `sliders` · `home` · `close` · `script` · `down` · `up` · `left` · `right` · `check` · `key` · `info` · `gear`
 
-`spark`, `layers`, `bolt`, `shield`, `palette`, `power`, `sliders`, `home`, `close`, `script`, `down`, `up`, `left`, `right`, `check`, `key`, `info`, `gear`
-
-Defaults: button = `bolt`, toggle = `power`, slider = `sliders`, dropdown = `layers`, keybind = `key`, label = `spark`.
+---
 
 ## Notes
 
-- Matcha only. Needs the Drawing API.
-- Client code is always copyable once running (`decompile` / `getscripts` can dump it). Obfuscation only slows people down. Keep secrets server-side.
+- New tabs are automatically placed above the Settings tab.
+- Right-click any Button or Toggle to bind a personal hotkey.
+- The library cleans up after itself when you unload.
+
+---
+
+**Credits**
+- Original UI ideas: 9mfg
+- Source inspiration: objectivizing
+- Current maintainer: DontRunSean
+```
+<p align="center">
+  <img src="https://i.imgur.com/IeW4tdV.png" width="320" alt="Notification" />
+</p>
+
+[README.md](https://github.com/user-attachments/files/32953504/README.md)
