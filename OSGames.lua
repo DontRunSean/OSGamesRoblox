@@ -663,7 +663,7 @@ local function smallButton(id, glyph, px, py, fn, modal, z)
 	box(id, px, py, 28, 28, ink, ease(id .. "h", over and 0.16 or 0.045), 8, z or 35)
 	local hover = ease(id .. "ink", over and 1 or 0)
 	icon(id .. "i", glyph, px + 4, py + 4 - hover, mix(muted, accent, hover), 1, (z or 35) + 1, 0, 1 + hover * .12)
-	if over and click then click = false; fn() end
+	if over and click then pendingTap = {fire = fn, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 end
 local function beginCapture(control)
 	capture = {keys = {}, control = control}; popup = nil
@@ -807,7 +807,7 @@ local function renderControl(c, lx, py, cw, index, clip)
 		local rotate = ease(id .. "rotate", popup and popup.control == c and not popup.Closing and 1 or 0)
 		line(id .. "chevron1", dx + 120, py + 30 + 5 * rotate, dx + 125, py + 35 - 5 * rotate, accent, contentA)
 		line(id .. "chevron2", dx + 125, py + 35 - 5 * rotate, dx + 130, py + 30 + 5 * rotate, accent, contentA)
-		if over and click then click = false; popup = {control = c, x = dx, w = 140, y = min(py + 53, H - 186), offset = 0}; animations.dropdown = 0 end
+		if over and click then pendingTap = {fire = function() popup = {control = c, x = dx, w = 140, y = min(py + 53, H - 186), offset = 0}; animations.dropdown = 0 end, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 	elseif c.Kind == "keybind" then
 		local mine = c.Custom and c or nil
 		local recording = capture and capture.control == mine
@@ -815,7 +815,7 @@ local function renderControl(c, lx, py, cw, index, clip)
 		box(id .. "key", dx, py + 15, 165, 35, accent, (0.07 + ease(id .. "record", recording and 0.16 or hit(dx, py + 15, 165, 35) and 0.06 or 0)) * contentA, 8, 30)
 		icon(id .. "keyicon", "key", dx + 9, py + 22, accent, contentA)
 		label(id .. "value", recording and "Press a key..." or (mine and (c.Value and keyName(c.Value) or "None") or keyName(app.Keybind)), dx + 38, py + 25, 12, ink, contentA, true)
-		if hit(dx, py + 15, 165, 35) and click then click = false; beginCapture(mine) end
+		if hit(dx, py + 15, 165, 35) and click then pendingTap = {fire = function() beginCapture(mine) end, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 	elseif c.Kind == "slider" then
 		local sc2 = ctlColor(c, accent)
 		local sx, sw = px + width - 177, min(156, width - 40)
@@ -848,7 +848,7 @@ local function renderPopup()
 		box("option" .. j, p.x + 5, rowY, pw - 10, 30, accent, (chosen and 0.22 + hover * .08 or hover * .16) * reveal, 7, 71)
 		label("optiontext" .. j, short(value, pw > 150 and 17 or 13), p.x + 12 + hover * 4, rowY + 9, 12, mix(chosen and accent or ink, accent, hover * .6), reveal, chosen, 73)
 		if chosen then icon("optioncheck" .. j, "check", p.x + pw - 29, rowY + 5, accent, reveal, 73) end
-		if over and click then click = false; c:SetValue(value); p.Closing = true; break end
+		if over and click then pendingTap = {fire = function() c:SetValue(value); p.Closing = true end, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false; break end
 	end
 	if popup and extra > 0 then
 		smallButton("optionsprev", "left", p.x + pw - 65, py + height - 29, function() p.offset = max(0, p.offset - 4) end, true, 74)
@@ -910,8 +910,8 @@ local function renderCloseConfirm()
 	box("closeYesRail", yesX, by + 11, 2, 21, accent, (.42 + .28 * yh) * aa, 1, 154)
 	label("closeYesText", "Yes, unload", yesX + 37 + yh * 2, by + 14, 12, RGB(255, 85, 85), .95 * aa, true, 154)
 	icon("closeYesArrow", "right", yesX + bw - 30 + yh * 2, by + 11, accent, .92 * aa, 155, 0, .82 + yh * .06)
-	if noOver and click then click = false; cancelClose() end
-	if yesOver and click then click = false; beginCloseAnimation() end
+	if noOver and click then pendingTap = {fire = function() cancelClose() end, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
+	if yesOver and click then pendingTap = {fire = function() beginCloseAnimation() end, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 end
 
 local function renderCloseEffects(now)
@@ -1029,13 +1029,17 @@ local function render()
 		elseif released then
 			pendingTap = nil
 			if (nowT - pt.t) <= TAP_DELAY and not moved and not scrolled then
-				local pc = pt.control
-				if pc then
-					if pc.Kind == "toggle" then
-						pc:SetValue(not pc.Value)
-					elseif pc.Kind == "button" then
-						animations[pc.Id .. "press"] = 1
-						fire(pc.Callback)
+				if pt.fire then
+					pt.fire()
+				else
+					local pc = pt.control
+					if pc then
+						if pc.Kind == "toggle" then
+							pc:SetValue(not pc.Value)
+						elseif pc.Kind == "button" then
+							animations[pc.Id .. "press"] = 1
+							fire(pc.Callback)
+						end
 					end
 				end
 			end
@@ -1230,7 +1234,7 @@ local function render()
 			box(tab.Id .. "rail", 21, py + 12, 2, 19, accent, weight * enter, 1, 24)
 			icon(tab.Id .. "icon", tab.Icon, 33 + hover * 2, py + 11 - hover * 2, iconTint(tab.Icon, max(weight, hover)), enter, 45, tab.Icon == "gear" and (weight * .35 + hover * .4) or hover * .035, 1 + hover * .12)
 			label(tab.Id .. "name", short(tab.Title, max(4, floor((navWidth - 48) / 7))), 64 + hover * 4, py + 15, 13, mix(muted, ink, weight), enter * sidebarText, selected == tab)
-			if over and click then click = false; tab:Select() end
+			if over and click then pendingTap = {fire = function() tab:Select() end, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 		end
 		if #app.Tabs > 5 then
 			smallButton("tabsprev", "up", 29 + 16 * sidebarOpen, 350 + 24 * sidebarOpen, function() tabOffset = max(0, tabOffset - 1) end)
