@@ -651,7 +651,7 @@ home:AddLabel({Title = "Thanks to 9mfg - original UI creator", Description = "Th
 home:AddLabel({Title = "HOLD ^ v chevrons to scroll", Description = "or clickhold and drag up or down", Icon = "bolt"})
 local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black", "Red", "Orange", "Cyan", "Pink"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
 settings:AddToggle({Title = "RGB spin", Description = "rainbow border arcs", Default = false, Callback = function(v) app.RGBSpin = v end})
-settings:AddToggle({Title = "Colored toggles", Description = "Green on-state, custom colors kept", Default = true, Callback = function(v) app.ColoredToggles = v end})
+settings:AddToggle({Title = "Colored toggles", Description = "Random on-state, custom colors kept", Default = true, Callback = function(v) app.ColoredToggles = v end})
 settings:AddToggle({Title = "Sidebar hover expand", Description = "Off = sidebar stays open", Default = false, Callback = function(v) app.SidebarHover = v end})
 settings:_add("keybind", {Title = "Menu keybind", Description = "Click to record a key. Escape cancels."})
 settings:AddButton({Title = "Test notification", Description = "Test it", Icon = "info", ButtonText = "Test", Callback = function()
@@ -783,7 +783,10 @@ local function renderControl(c, lx, py, cw, index, clip)
 		end
 	elseif c.Kind == "toggle" then
 		local tc
-		if app.ColoredToggles then tc = ctlColor(c, COLORED_ON) else tc = accent end
+		if app.ColoredToggles then
+			if c.Color == nil then c.Color = Color3.fromHSV(math.random(), 0.7, 0.95) end
+			tc = ctlColor(c, COLORED_ON)
+		else tc = accent end
 		local v = ease(id .. "switch", c.Value and 1 or 0)
 		local swx = px + width - 66
 		box(id .. "switch", swx, py + 21, 46, 24, mix(muted, tc, v), (0.16 + v * 0.5) * contentA, 12, 30)
