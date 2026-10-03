@@ -738,7 +738,7 @@ local function renderControl(c, lx, py, cw, index, clip)
 	icon(id .. "customicon", c.Icon, px + 18.5, py + 22.5 - hover * 2, iconTint(c.Icon, hover), contentA, 28, hover * .08, 1 + hover * .1)
 	local right = c.Kind == "label" and 0 or 195
 	local tLen = 52
-	if c.Kind == "button" or c.Kind == "toggle" then tLen = 20
+	if c.Kind == "button" or c.Kind == "toggle" or c.Kind == "slider" then tLen = 20
 	elseif right > 0 then tLen = narrow and 12 or 28 end
 	local dLen = right > 0 and (narrow and 14 or 38) or 66
 	if not c.Primary then
