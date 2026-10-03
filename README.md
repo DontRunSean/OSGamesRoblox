@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="https://i.imgur.com/ndFlWEu.png" width="49%" alt="Home tab" />
-  <img src="https://i.imgur.com/sj991Ag.png" width="49%" alt="Settings tab" />
+  <img src="https://i.imgur.com/nMT48Ah.png" width="49%" alt="Home tab" />
+</p>
 
 A lightweight, clean external UI library for Roblox (Matcha).
 
@@ -11,21 +11,25 @@ A lightweight, clean external UI library for Roblox (Matcha).
 ## Features
 
 - Smooth animations & modern look
-- 8 built-in themes
+- 8 built in themes
 - Tabs + sidebar navigation
 - Buttons, Toggles, Sliders, Dropdowns, Keybinds, Labels
+- **Two column sections** (`AddSection`) with headers + middle divider
+- **Per toggle colors** + global Colored toggles switch
+- **Primary** full-width action bars and **Row** whole row buttons
+- Whole row toggle clicks (switch, text, anywhere on the row)
 - Notifications
-- Per-control hotkeys (right-click any button/toggle to bind)
+- Per control hotkeys (right click any button/toggle to bind, hints on every row)
 - Draggable window
 - Avatar display
-- Easy unload with confirmation
+- Easy unload with confirmation / should unload all scripts ran {not guaranteed} 
 
 ---
 
 ## Requirements
 
-- **Matcha** executor (or any executor with the Drawing API)
-- Internet access (for avatar + loading)
+- **Matcha**  (or any external with the Drawing API but lets be real its matcha or nothin) nurd... nvm
+- Internet access (for avatar + loading) -_-
 
 ---
 
@@ -41,6 +45,10 @@ local UI = getfenv().OSGames or rawget(_G, "OSGames")
 ```
 
 After loading, the menu appears. Press **Right Shift** to show/hide it.
+
+> Load order: run the library **first**, then your menu script. Scripts written
+> for older versions keep working unchanged (same `AddTab`/`AddToggle`/…
+> calls, same `UI.Tabs`, `Notify`, `OnUnload`).
 
 ---
 
@@ -120,6 +128,28 @@ Main:Select()
 
 ---
 
+## Two-Column Sections
+
+```lua
+local main = UI:AddTab({ Title = "Main", Icon = "home" })
+
+-- Left column
+local tp = main:AddSection({ Title = "TELEPORT", Column = 1 })
+tp:AddButton({ Title = "Teleport To Home", Icon = "home", ButtonText = "Go",
+    Row = true, Callback = function() end })
+
+-- Right column
+local esp = main:AddSection({ Title = "ESP", Column = 2 })
+esp:AddToggle({ Title = "ESP Players", Default = true,
+    Color = Color3.fromRGB(170, 130, 255) })
+```
+
+- Section titles render as accent headers; a divider appears when both columns are used.
+- Plain `tab:Add*` controls keep rendering full-width, so old scripts are unaffected.
+- `tab:SetColumns(1)` forces single-column mode.
+
+---
+
 ## All Controls
 
 | Control     | Example |
@@ -131,12 +161,26 @@ Main:Select()
 | **Keybind** | `tab:AddKeybind({Title = "...", Description = "..."})` |
 | **Label**   | `tab:AddLabel({Title = "...", Description = "..."})` or `tab:AddLabel("Just text")` |
 
+Extra options (all optional, all backwards compatible):
+
+| Option     | Where | What |
+|------------|-------|------|
+| `Color`    | Toggle, Slider | `Color3` on-state color (toggle falls back to green, slider to accent) |
+| `Primary`  | Button | Full-width dark action bar with the title inside it |
+| `Row`      | Button | Clicking anywhere on the row fires it (toggles always behave this way) |
+| `Column`   | Any control | `1` / `2` to place it without a section |
+| `Hotkey`   | Button, Toggle | Preset hotkey (`"G"`, `"F1"`, …) |
+| `Icon`     | Tab, any control | Icon name (see below) |
+
 Every control returns an object with:
 - `:GetValue()`
 - `:SetValue(value)`
 - `:SetText(text)`
 - `:SetDescription(text)`
+- `:SetColor(color)` / `:GetColor()`
 - `:SetHotkey(vk)` / `:ClearHotkey()`
+
+Titles on buttons and toggles cut off at 20 characters (`...`).
 
 ---
 
@@ -162,28 +206,42 @@ UI:Destroy()                   -- Instantly unload everything
 
 ```lua
 UI.Visible = true/false
-UI.BgOpacity = 0.85            -- 0.2 to 1.0
+UI.BgOpacity = 0.85            -- fixed look, no slider
 UI.RGBSpin = true              -- Rainbow border
 UI.Effects = true
 UI.EffectStrength = 0.8
 UI.ReducedMotion = false
+UI.ColoredToggles = true       -- green/custom on-states (Settings tab)
+UI.SidebarHover = false        -- true = sidebar collapses until moused over
 ```
+
+---
+
+## Settings Tab
+
+Ships with the library: Theme picker, Colored toggles, Sidebar hover
+expand, Menu keybind recorder, RGB spin, notification test.
 
 ---
 
 ## Icons
 
-You can set `Icon = "name"` on any tab or control.
+You can set `Icon = "name"` on any tab or control. Unknown names fall back
+to `script`.
 
 **Available icons:**
 `spark` · `layers` · `bolt` · `shield` · `palette` · `power` · `sliders` · `home` · `close` · `script` · `down` · `up` · `left` · `right` · `check` · `key` · `info` · `gear`
+
+`bolt` tints yellow, `power` green, `home` blue, plus muted tones for
+`sliders` / `layers` / `gear`.
 
 ---
 
 ## Notes
 
 - New tabs are automatically placed above the Settings tab.
-- Right-click any Button or Toggle to bind a personal hotkey.
+- Right click any Button or Toggle to bind a personal hotkey (hint on each row).
+- Control hotkeys fire even while the menu is hidden.
 - The library cleans up after itself when you unload.
 
 ---
@@ -192,9 +250,3 @@ You can set `Icon = "name"` on any tab or control.
 - Original UI ideas: 9mfg
 - Source inspiration: objectivizing
 - Current maintainer: DontRunSean
-```
-<p align="center">
-  <img src="https://i.imgur.com/IeW4tdV.png" width="320" alt="Notification" />
-</p>
-
-[README.md](https://github.com/user-attachments/files/32953504/README.md)
