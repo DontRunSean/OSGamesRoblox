@@ -647,9 +647,8 @@ end
 local home = app:AddTab({Title = "Home Page", Icon = "home"}); app.Home = home
 local settings = app:AddTab({Title = "Settings", Icon = "gear"}); app.Settings = settings
 home:AddLabel({Title = "Thanks for using OSGames.", Description = "Credit page | DontRunSean", Icon = "home"})
-home:AddLabel({Title = "Thanks to 9mfg", Description = "original UI creator", Icon = "spark"})
-home:AddLabel({Title = "Thanks to objectivizing", Description = "UI lib source used", Icon = "layers"})
-home:AddLabel({Title = "HOLD ^ v chevrons to scroll", Description = "Or drag content / thumb. Keys work too", Icon = "bolt"})
+home:AddLabel({Title = "Thanks to 9mfg - original UI creator", Description = "Thanks to objectivizing - UI lib source used", Icon = "spark"})
+home:AddLabel({Title = "HOLD ^ v chevrons to scroll", Description = "or clickhold and drag up or down", Icon = "bolt"})
 local themeControl = settings:AddDropdown({Title = "Theme", Description = "colors", Options = {"Purple", "Green", "Blue", "Black", "Red", "Orange", "Cyan", "Pink"}, Default = "Black", Callback = function(v) app:SetTheme(v) end})
 settings:AddToggle({Title = "RGB spin", Description = "rainbow border arcs", Default = false, Callback = function(v) app.RGBSpin = v end})
 settings:AddToggle({Title = "Colored toggles", Description = "Green on-state, custom colors kept", Default = true, Callback = function(v) app.ColoredToggles = v end})
