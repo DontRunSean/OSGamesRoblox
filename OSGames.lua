@@ -36,7 +36,7 @@ end
 local function short(s, n) s = tostring(s or ""); return #s > n and s:sub(1, n - 3) .. "..." or s end
 local function smooth(t) t = clamp(t, 0, 1); return t * t * t * (t * (t * 6 - 15) + 10) end
 
-local app = {Name = "OSGames", Version = "2.4.2", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false, ColoredToggles = true, SidebarHover = false, _teardown = {}}
+local app = {Name = "OSGames", Version = "2.4.3", StartupSound = true, Effects = true, ReducedMotion = false, EffectStrength = 0.8, Alive = true, Tabs = {}, Theme = "Black", Keybind = 0xA1, Visible = true, BgOpacity = 0.85, RGBSpin = false, ColoredToggles = true, SidebarHover = false, _teardown = {}}
 env.OSGames = app; pcall(rawset, _G, "OSGames", app)
 env.JDUI = nil; pcall(rawset, _G, "JDUI", nil)
 
@@ -143,6 +143,11 @@ end
 local hotPrev = {} -- hotkey press state
 local drag, slide, popup, capture = nil, nil, nil, nil
 local scrollGrab = nil
+-- tap-vs-hold gate: buttons/toggles fire only on a quick tap (<= TAP_DELAY) with no scroll/drag; hold/drag scrolls instead
+local TAP_DELAY = 0.1
+local TAP_MOVE = 10
+local pendingTap = nil
+local released = false
 local inputBlocked = false
 local function setGameBlock(block)
 	if inputBlocked == block then return end
@@ -610,6 +615,7 @@ function Tab:AddSection(o)
 	return handle
 end
 local function replayTab(tab)
+	tab.Scroll = 0; pendingTap = nil
 	animations.content = 0; contentA = 0; visitTime = motionClock; popup = nil; slide = nil; capture = nil
 	for _, c in ipairs(tab.Controls) do
 		local id = c.Id
@@ -752,7 +758,7 @@ local function renderControl(c, lx, py, cw, index, clip)
 			local pf = mix(tint, white, 0.17 + ease(id .. "hover", over and 0.05 or 0))
 			box(id .. "button", bx0 + pulse, py + 15 + pulse * 0.5, bw0 - pulse * 2, 34 - pulse, pf, 0.92 * contentA, 10, 30)
 			label(id .. "run", t, bx0 + bw0 * 0.5 - #t * 3.9, py + 23, 13, ink, contentA, true)
-			if over and click then click = false; animations[id .. "press"] = 1; fire(c.Callback) end
+			if over and click then pendingTap = {control = c, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 		else
 			local bx = px + width - 93
 			local bh = 28
@@ -761,9 +767,9 @@ local function renderControl(c, lx, py, cw, index, clip)
 			local pulse = ease(id .. "press", 0, 9)
 			box(id .. "button", bx + pulse * 2, by + pulse, 76 - pulse * 4, bh - pulse, accent, (0.14 + pulse * 0.25 + ease(id .. "hover", over and 0.13 or 0)) * contentA, 9, 30)
 			label(id .. "run", c.ButtonText, bx + 12, by + 8, 12, ink, contentA, true); icon(id .. "arrow", "right", bx + 52, by + 6, accent, contentA)
-			if over and click then click = false; animations[id .. "press"] = 1; fire(c.Callback) end
+			if over and click then pendingTap = {control = c, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 		end
-		if c.Row and hovered and click then click = false; animations[id .. "press"] = 1; fire(c.Callback) end
+		if c.Row and hovered and click then pendingTap = {control = c, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 		if not c.Primary then
 			if hovered and rclick and not capture and not popup then rclick = false; beginHotkeyCapture(c) end
 			if narrow then
@@ -783,8 +789,7 @@ local function renderControl(c, lx, py, cw, index, clip)
 		local swx = px + width - 66
 		box(id .. "switch", swx, py + 21, 46, 24, mix(muted, tc, v), (0.16 + v * 0.5) * contentA, 12, 30)
 		box(id .. "knob", swx + 4 + 22 * v, py + 25, 16, 16, ink, contentA, 8, 31)
-		if hit(swx - 15, py + 12, 65, 42) and click then click = false; c:SetValue(not c.Value) end
-		if hovered and click then click = false; c:SetValue(not c.Value) end
+		if (hit(swx - 15, py + 12, 65, 42) or hovered) and click then pendingTap = {control = c, t = tick(), x = mx, y = my, scroll = (selected and selected.Scroll) or 0}; click = false end
 		if hovered and rclick and not capture and not popup then rclick = false; beginHotkeyCapture(c) end
 		if narrow then
 			if capture and capture.hotkeyControl == c then label(id .. "hotkey", "Press a key...", px + 57, py + 44, 10, accent, contentA, true)
@@ -1002,7 +1007,8 @@ local function render()
 	local now = tick(); dt = clamp(now - last, 0, 0.1); last = now; frame = frame + 1
 	if not app.ReducedMotion then motionClock = motionClock + dt end
 	active = type(isrbxactive) ~= "function" or isrbxactive()
-	down = active and ismouse1pressed() and not (app.InputGuard and app.InputGuard()); click = down and not previousDown; previousDown = down
+	local wasDown = previousDown
+	down = active and ismouse1pressed() and not (app.InputGuard and app.InputGuard()); click = down and not wasDown; released = (not down) and wasDown; previousDown = down
 	rdown = active and rightHeld() and not (app.InputGuard and app.InputGuard()); rclick = rdown and not previousRDown; previousRDown = rdown
 	mx, my = mouse.X, mouse.Y
 	-- block game clicks under the menu
@@ -1012,6 +1018,31 @@ local function render()
 		setGameBlock(wantBlock and true or false)
 	end
 	if not down then drag = nil; slide = nil; scrollGrab = nil end
+	-- tap-vs-hold gate for buttons/toggles: quick tap fires, hold/drag to scroll is ignored
+	if pendingTap then
+		local pt = pendingTap
+		local nowT = tick()
+		local moved = abs(mx - pt.x) > TAP_MOVE or abs(my - pt.y) > TAP_MOVE
+		local curScroll = (selected and (selected.Scroll or 0)) or 0
+		local scrolled = abs(curScroll - (pt.scroll or 0)) > 1
+		if moved or scrolled or (down and (nowT - pt.t) > TAP_DELAY) then
+			pendingTap = nil
+		elseif released then
+			pendingTap = nil
+			if (nowT - pt.t) <= TAP_DELAY and not moved and not scrolled then
+				local pc = pt.control
+				if pc then
+					if pc.Kind == "toggle" then
+						pc:SetValue(not pc.Value)
+					elseif pc.Kind == "button" then
+						animations[pc.Id .. "press"] = 1
+						fire(pc.Callback)
+					end
+				end
+			end
+			released = false
+		end
+	end
 	-- no wheel: drag, scrollbar, keys
 	if click and selected and introDone and app.Visible and a > 0.5 and not popup and not capture and not closeConfirm and not closeConfirmClosing and not closingStarted then
 		local ms0 = maxScroll()
